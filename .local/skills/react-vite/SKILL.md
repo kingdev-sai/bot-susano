@@ -8,17 +8,38 @@ Always follow these guidelines when building a React + Vite web application:
 ## Architecture
 
 - Follow modern web application patterns and best-practices.
-- Put as much of the app in the frontend as possible. The backend should only be responsible for data persistence and making API calls.
-- Minimize the number of files. Collapse similar components into a single file.
 - If the app is complex and requires functionality that can't be done in a single request, it is okay to stub out the backend and implement the frontend first.
 
 ## Frontend
 
+- Load the `design` skill and start an async design subagent to build the frontend. Do not give the subagent any recommendation or advice on how it should build the frontend unless requested by the user. For example, do not talk about color, font, layout, etc. the design subagent has much better taste than you
 
-- Load the `design` skill and call `generateFrontend()` via the `code_execution_tool` to build the frontend. Do not pass any design-specific recommendations (colors, fonts, layout). Only pass feature descriptions and backend context. The frontend generator has much better taste than you
+## First Build
 
+### Step 1: Classify the app
 
-## Approach
+Before building, classify the app to decide how you and the DESIGN subagent split work. **The design subagent is always used** — the question is how much it owns.
+
+- **Presentation-first** (landing pages, fan sites, portfolios, brand microsites, marketing sites): DESIGN subagent owns almost everything. No backend needed. Skip to the presentation-first workflow below.
+- **Personal utility** (notes, journals, habit trackers, personal finance, mood trackers, reading lists): These are personal tools, not business tools. Treat like consumer/lifestyle — personality encouraged, micro-interactions expected. Information-density-first does NOT apply.
+- **CRUD / dashboards / admin tools** (CRMs, inventory tools, internal tools, analytics dashboards): Parent agent owns product surface and backend. DESIGN subagent owns the entire frontend visual layer.
+- **Logic-heavy / backend-coupled** (real-time collaboration, workflow engines, devtools, infra tools, scheduling systems): Parent agent leads backend and systems logic. DESIGN subagent still builds the frontend — it handles UI shells, components, pages, and polish.
+- **Interactive visual experiences / casual games** (browser games, playful interactive scenes): DESIGN subagent strongly influences frontend, animation, and visual assets. Parent agent owns game rules, persistence, and systems logic.
+
+### Step 2: Plan the API surface
+
+The difference between a boring app and a great app is usually 3-5 extra endpoints in the spec. Before codegen, spend an extra minute adding safe wow endpoints beyond flat CRUD — lightweight read-only endpoints that make the app feel polished:
+
+- Dashboard summaries (totals, grouped counts, pipeline values)
+- Recent activity / timeline feeds
+- Status/stage breakdowns and domain-specific aggregates
+- Top/trending/pinned item queries
+
+Skip speculative expensive features (recommendations, anomaly detection, forecasting, complex real-time presence).
+
+This way the design subagent has real hooks for both the core app and the wow surfaces, and integration is minimal.
+
+### Step 3: Build with maximum parallelism
 
 Use the `pnpm-workspace` skill as the source of truth for shared monorepo rules. When you touch backend code, follow the `pnpm-workspace` skill's references:
 
@@ -26,51 +47,56 @@ Use the `pnpm-workspace` skill as the source of truth for shared monorepo rules.
 - `references/server.md` for `artifacts/api-server/src/routes/` conventions
 - `references/db.md` for `lib/db/src/schema/` and Drizzle guidance
 
+#### For apps with a backend
 
-1. Create the artifact and read the `design` skill
-2. Define the OpenAPI contract in `lib/api-spec/openapi.yaml`, then run `pnpm --filter @workspace/api-spec run codegen`.
-3. Call `generateFrontend()` immediately after codegen, following the `design` skill's `generateFrontend()` rules:
-    - Pass only product features and backend context via `implementationNotes`.
-    - Pass a short abstract mood via `designStyle` when it helps (for example "clean minimal" or "dark mode professional"). Do not reference specific products or brands.
-    - Pass generated API files via `relevantFiles`, plus existing theme/UI files when they are relevant.
-    - Do not describe colors, fonts, layout, or other visual implementation details.
-    - Do not spend time reading the codegen output before calling `generateFrontend()`; start the frontend job first, then do the remaining backend work while it runs.
-4. While the frontend generates, do backend work in parallel:
-    - First, run `grep "^export const" lib/api-zod/src/generated/api.ts` to see the exact Zod schema export names. Never assume or guess generated names — they are derived from OpenAPI operation IDs and are not predictable.
-    - Add DB schema in `lib/db/src/schema/` when needed, then run `pnpm --filter @workspace/db run push`.
-    - Implement API routes in `artifacts/api-server/src/routes/`.
-    - Seed example data if the app needs it.
-5. Wait for the frontend generation to finish — by this point your backend is done too.
+**The design subagent is the bottleneck — everything is ordered to get it running ASAP.**
 
-7. Fix any integration issues (restart workflow and refresh logs)
+1. Create the artifact.
+2. Write the OpenAPI spec in `lib/api-spec/openapi.yaml` — include both core CRUD and the safe wow endpoints from Step 2. This is the **critical path** because it gates codegen which gates the design subagent.
+3. Run codegen (`pnpm run --filter @workspace/api-spec codegen`)
+4. Grep the exact generated hook/queryKey exports and launch the design subagent (async), following the `design` skill's delegation rules:
+    - Run `grep "^export " lib/api-client-react/src/generated/*.ts | grep -E "function use|const use|QueryKey"` and include the full list in the task description so the subagent does not guess names.
+    - Pass the generated client files, the main CSS/theme file, `src/App.tsx`, `package.json`, and `references/frontend_general_rules.md` via `relevantFiles` so the subagent can import and use real API hooks without wasting time exploring.
+    - Keep the task description SHORT: app purpose (1-2 sentences), page routes with one-line purposes, data types with fields, and the API hooks list.
+    - Tell the subagent to use ALL the provided hooks. The product surface has been planned; the subagent should express it beautifully, not invent net-new features.
+5. While the design subagent runs, do backend work in parallel:
+    - Provision a database if the app needs one.
+    - Write DB schema in `lib/db/src/schema/`, then run `pnpm --filter @workspace/db run push`.
+    - Implement API routes in `artifacts/api-server/src/routes/`
+    - Seed a small amount of example data (1-3 rows per table) so the app isn't empty on first load. Do not over-seed.
+    - For seed data images that don't come from a real API, use `generate_image` instead of placeholder services (DiceBear, Boring Avatars, Unsplash, Lorem Picsum, etc.). Real API image URLs (e.g. PokéAPI sprites, TMDB posters) are fine.
+    - You can also ask the design subagent to generate images/video as part of its task — it has access to `generate_image`, `generate_video`, and `stock_image`.
+Note: It's important to do all the DB schema/definitions/seeding and development work only after the design subagent has been spawned for maximal speed.
+6. After your backend development process is done. wait for the design subagent to finish.
+   Note: Do not restart the frontend workflow until the design subagent is done otherwise it will show a broken app, you can restart the API one if needed.
+7. Fix any integration issues (restart workflow and refresh logs).
 8. Present the artifact — show it to the user.
 9. Call `suggestDeploy()` — prompt the user to publish their app so it's live and accessible.
 
-Important Notes:
+#### For presentation-first apps (no backend)
 
+No OpenAPI, no codegen. Launch the design subagent immediately.
 
-- Frontend generation runs in the background — call `generateFrontend()` as soon as codegen is complete
-- Do not waste time reading or exploring the codegen files before calling `generateFrontend()` — this will lead to a slower build time
-- For subsequent design iterations or visual fixes after the initial build, use the design subagent (`subagent(specialization="DESIGN")`)
+1. Create the artifact and read the `design` skill
+2. Launch the design subagent (async) immediately — no codegen step needed. Follow the `design` skill's presentation-heavy delegation rules:
+    - Pass the main CSS/theme file, `src/App.tsx`, and `package.json` via `relevantFiles`.
+    - Provide a vivid brand identity, the pages to build, and a design direction.
+3. Present the artifact when the subagent finishes.
+4. Call `suggestDeploy()`.
 
+### Important notes
+
+- The design subagent will be a bottleneck — it takes time to build the frontend so launch it as soon as codegen is complete
+- After the frontend build finishes, if this is part of a multi-artifact project, extract the design tokens from the generated `src/index.css` (colors, fonts, radius) and store them for use in subsequent artifacts (expo, slides, etc.). This ensures all artifacts share the same visual identity. See `multi-artifact-creation.md` "Visual Consistency" section.
 - Do not read unnecessary files. When building this artifact, you are not building the frontend so reading the generated react hooks is a waste of time and context
 - After presenting the artifact, call `suggestDeploy()` so the user knows their app is ready to publish
 - Follow the service access and routing rules from the `pnpm-workspace` skill.
-- If the app is being transitioned from a mockup the user made using the canvas, do not call `generateFrontend`. Instead, use what the user created to build the react-vite application 
+- If the app is being transitioned from a mockup the user made using the canvas, use what the user created to build the react-vite application directly
+- **WebSocket proxy path**: If the app uses WebSockets, the WS path (e.g. `/ws`) must be listed in `artifact.toml`'s `paths` array alongside the REST API path. The proxy only forwards explicitly listed paths — unlisted WS paths are silently dropped and the server never sees the connection.
+- After each OpenAPI spec change, re-run codegen before using the updated types.
 
 ## SEO
 
 - Ensure every page has a unique, descriptive title tag (e.g., "Product Name - Category | Site Name")
 - Add meta descriptions that summarize page content concisely
 - Implement Open Graph tags for better social media sharing appearance
-
-## References
-
-If you are touching the frontend, read these files. If you are launching a design subagent, add the full file path to these files so it reads them before implementing the frontend
-
-- `references/hover_and_elevation.md` - Use this reference when adding or changing hover/active/toggle interaction behavior, elevation effects, or overflow-sensitive interactive styling.
-- `references/shadcn_component_rules.md` - Use this reference when building or modifying UI with Shadcn components (especially Button, Card, Badge, Avatar, and Textarea).
-- `references/layout_and_spacing.md` - Use this reference when structuring page layouts, sections, spacing rhythm, and component alignment.
-- `references/sidebar_rules.md` - Use this reference when building or modifying a sidebar.
-- `references/visual_style_and_contrast.md` - Use this reference when choosing contrast, borders, shadows, pane/panel treatment, and hero image presentation.
-- `references/frontend_general_rules.md` - Use this reference to learn about frontend setup, best practices, and styling

@@ -1,6 +1,6 @@
 module.exports = function ({api ,models, Users, Threads, Currencies, globalData, usersData, threadsData , message }) {
     const logger = require("../../utils/log.js");
-   	const moment = require("moment");
+        const moment = require("moment");
 
     return function ({ event }) {
         const timeStart = Date.now()
@@ -13,6 +13,7 @@ module.exports = function ({api ,models, Users, Threads, Currencies, globalData,
         threadID = String(threadID);
         if (userBanned.has(senderID)|| threadBanned.has(threadID) || allowInbox == ![] && senderID == threadID) return;
         for (const [key, value] of events.entries()) {
+            if (!value.config?.eventType) continue;
             if (value.config.eventType.indexOf(event.logMessageType) !== -1) {
                 const eventRun = events.get(key);
                 try {
@@ -28,7 +29,7 @@ module.exports = function ({api ,models, Users, Threads, Currencies, globalData,
                     Obj.Currencies = Currencies 
                     eventRun.run(Obj);
                     if (DeveloperMode == !![]) 
-                    	logger(global.getText('handleEvent', 'executeEvent', time, eventRun.config.name, threadID, Date.now() - timeStart), '[ Event ]');
+                        logger(global.getText('handleEvent', 'executeEvent', time, eventRun.config.name, threadID, Date.now() - timeStart), '[ Event ]');
                 } catch (error) {
                     logger(global.getText('handleEvent', 'eventError', eventRun.config.name, JSON.stringify(error)), "error");
                 }

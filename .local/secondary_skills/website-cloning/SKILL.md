@@ -1,454 +1,264 @@
 ---
 name: website-cloning
-description: Clone any website as a deployable React + Vite web app with real scraped content (images, text, structure, colors, fonts). Use when the user asks to clone, replicate, copy, or rebuild an existing website.
+description: Clone or recreate a website's design and functionality. Covers visual scraping, functional app building, image handling, mobile support, and validation.
 ---
 
-# Website Cloning
+# Website Cloning Skill
 
-Clone a website's design and layout into a React + Vite web app using real scraped content from the target site.
+Build a faithful recreation of an existing website — either as a static visual clone or a full-stack functional app inspired by the target's design.
 
 ## Legitimate Use Policy
 
-**Before cloning, you MUST confirm the user's intent is legitimate.** Ask the user directly:
+This skill is for learning, prototyping, and building original products inspired by existing designs. Do NOT use it to:
 
-1. **"Is this your own website or your client's website?"** — Cloning your own site (e.g., to rebuild on a new stack, create a staging copy, or migrate platforms) is always fine.
-2. **"What is this clone for?"** — Acceptable purposes include:
-   - Rebuilding your own site on a new framework
-   - Creating a design reference/inspiration starting point (with significant modifications planned)
-   - Learning how a layout or component works
-   - Building a staging/test version of a site you own
-   - Migrating a client's site to a new platform with their permission
+- Impersonate another brand or business
+- Copy proprietary content, trademarks, or copyrighted material
+- Violate terms of service of the target site
+- Deceive users into thinking they are on the original site
 
-**REFUSE to proceed if any of these apply:**
+Always replace logos, brand names, and proprietary content with original alternatives.
 
-- The user wants to impersonate another business or individual
-- The clone will be used to collect credentials, payment info, or personal data from visitors who believe they're on the original site (phishing)
-- The user wants to create a lookalike site to redirect or steal traffic from the original
-- The clone copies trademarked branding (logos, brand names) of a business the user does not own, without plans to replace them
-- The user explicitly states intent to deceive visitors about who operates the site
+## Functional App vs Visual Clone — Decision Tree
 
-**When in doubt, ask.** A simple "What's this clone for?" usually clarifies intent. Most users have perfectly legitimate reasons — rebuilding their own site, learning from good design, or migrating platforms. Don't be overly suspicious, but do confirm before proceeding.
+Before scraping anything, determine what the user actually wants. Most users saying "build something like X" want a **functional app**, not a pixel-perfect static clone.
 
-**Required modifications for non-owned sites:** If the user is cloning a site they don't own (for design inspiration), remind them to:
+### Choose "Functional App" when the user
 
-- Replace all logos, brand names, and trademarks with their own
-- Replace product data, pricing, and business-specific content
-- Change contact information, social links, and legal pages
-- Treat the clone as a design template, not a finished product
+- Says "build something like [site]", "inspired by [site]", or "similar to [site]"
+- Wants backend functionality (database, API, user accounts, CRUD operations)
+- Needs the app to work with real data
+- Mentions specific features (e.g., "like Vinted but for books")
 
-## Overview
+**Approach:** Use the target site as design inspiration only. Scrape the homepage for layout/color/typography reference, then build a full-stack app using the project's existing framework (React, Vite, Express, etc.). Do NOT build a static HTML clone.
 
-This skill uses Playwright (system Chromium) to scrape a target website's visual structure, content, images, colors, fonts, and layout — then builds a faithful React + Vite clone using that data. The clone uses real CDN image URLs, real text, real navigation links, and real design tokens extracted from the live site.
+### Choose "Visual Clone" when the user
 
-## Prerequisites
+- Says "clone this page", "replicate this design", "copy this layout"
+- Wants a single static page or landing page
+- Is studying CSS/layout techniques
+- Needs a quick prototype with no backend
 
-- **Chromium**: Use the system Chromium at the Nix store path. Run `find /nix/store -name chromium -type f 2>/dev/null | head -5` to locate the exact path. Cache it for all subsequent scripts.
-- **Playwright**: Install via `pip install playwright` (no need for `playwright install` — use the system Chromium directly via `executable_path`).
-- **Artifact**: Use the `artifacts` skill to scaffold a React + Vite web app artifact before building components.
+**Approach:** Follow the full 5-phase scraping process below.
 
-## Phase 1: Visual Reconnaissance
+### When in doubt
 
-Capture a full-page screenshot and extract design tokens before scraping content.
+Ask the user: "Would you like a working app inspired by that site's design, or a visual replica of the page layout?"
 
-```python
-from playwright.sync_api import sync_playwright
+---
 
-def recon(url, chromium_path, out_dir="clone"):
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, executable_path=chromium_path)
-        page = browser.new_page(viewport={"width": 1440, "height": 900})
-        page.goto(url, wait_until="networkidle", timeout=60000)
+## Phase 1: Environment Setup
 
-        # Force lazy content to load by scrolling the full page
-        page.evaluate("""
-          async () => {
-            await new Promise(r => {
-              let y = 0;
-              const t = setInterval(() => {
-                window.scrollBy(0, 300);
-                y += 300;
-                if (y >= document.body.scrollHeight) { clearInterval(t); r(); }
-              }, 100);
-            });
-          }
-        """)
-        page.wait_for_timeout(3000)
-        page.evaluate("window.scrollTo(0, 0)")
-        page.wait_for_timeout(1000)
+### Primary Method — Node.js Playwright (Recommended)
 
-        # Full-page screenshot for visual reference
-        page.screenshot(path=f"{out_dir}/full_page.png", full_page=True)
+Node.js is always available in the Replit workspace. Use this as the default.
 
-        # Extract design tokens
-        tokens = page.evaluate("""
-          () => {
-            const body = document.body;
-            const cs = getComputedStyle(body);
-            return {
-              bgColor: cs.backgroundColor,
-              textColor: cs.color,
-              fontFamily: cs.fontFamily,
-              fontSize: cs.fontSize,
-              // Extract CSS custom properties from :root
-              cssVars: [...document.styleSheets].flatMap(sheet => {
-                try {
-                  return [...sheet.cssRules].filter(r => r.selectorText === ':root')
-                    .flatMap(r => [...r.style].map(prop => [prop, r.style.getPropertyValue(prop)]));
-                } catch { return []; }
-              })
-            };
-          }
-        """)
-        # Save tokens as JSON
-        import json
-        open(f"{out_dir}/tokens.json", "w").write(json.dumps(tokens, indent=2))
-        browser.close()
+```bash
+# Install Playwright as a dev dependency
+pnpm add -D playwright
+
+# Find the correct Chromium binary in Nix store
+CHROMIUM_PATH=$(ls /nix/store/*/bin/chromium 2>/dev/null | head -1)
+echo "Chromium at: $CHROMIUM_PATH"
 ```
 
-Key extractions:
+**Node.js scraping script template:**
 
-- Background color, text color, font families
-- CSS custom properties / design tokens
-- Full-page screenshot as visual reference
+```javascript
+const { chromium } = require('playwright');
 
-## Phase 2: Deep Content Scrape
+(async () => {
+  const browser = await chromium.launch({
+    executablePath: process.env.CHROMIUM_PATH || '/nix/store/.../bin/chromium',
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  });
 
-Extract all content from the rendered page. Critical: modern sites are SPAs — the raw HTML is often empty. You MUST use Playwright's `page.evaluate()` to extract content from the rendered DOM.
+  const page = await browser.newPage();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.setExtraHTTPHeaders({
+    'User-Agent': 'Mozilla/5.0 ...',
+  });
 
-```python
-def scrape_content(url, chromium_path, out_dir="clone"):
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, executable_path=chromium_path)
-        page = browser.new_page(viewport={"width": 1440, "height": 900})
-        page.goto(url, wait_until="networkidle", timeout=60000)
+  await page.goto('<https://target-site.com>', {
+    waitUntil: 'networkidle',
+    timeout: 30000,
+  });
 
-        # IMPORTANT: Scroll the full page to trigger lazy loading
-        for _ in range(8):
-            page.evaluate("window.scrollBy(0, 1500)")
-            page.wait_for_timeout(1500)
-        page.evaluate("window.scrollTo(0, 0)")
-        page.wait_for_timeout(1000)
+  await page.screenshot({ path: 'reference-desktop.png', fullPage: true });
 
-        data = page.evaluate("""
-          () => {
-            const result = {};
+  const styles = await page.evaluate(() => {
+    const computed = getComputedStyle(document.body);
+    return {
+      fontFamily: computed.fontFamily,
+      backgroundColor: computed.backgroundColor,
+      color: computed.color,
+    };
+  });
 
-            // 1. Top banner / announcement bar
-            // Look for common patterns: fixed top bars, rotating promos
-            const banner = document.querySelector(
-              '[class*="banner"], [class*="announcement"], [class*="promo-bar"], [class*="top-bar"]'
-            );
-            if (banner) {
-              result.banner = {
-                bgColor: getComputedStyle(banner).backgroundColor,
-                text: banner.innerText.trim(),
-                slides: [...banner.querySelectorAll('[class*="slide"], [class*="message"]')].map(s => ({
-                  text: s.innerText.trim(),
-                  link: s.querySelector('a')?.href || ''
-                }))
-              };
-            }
-
-            // 2. Header / Navigation
-            const header = document.querySelector('header') || document.querySelector('[class*="header"], nav');
-            if (header) {
-              result.header = {
-                height: header.offsetHeight,
-                bgColor: getComputedStyle(header).backgroundColor,
-                navLinks: [...header.querySelectorAll('a')].map(a => ({
-                  text: a.innerText.trim(),
-                  href: a.getAttribute('href') || ''
-                })).filter(l => l.text && l.text.length < 50)
-              };
-            }
-
-            // 3. All visible sections in DOM order
-            const main = document.querySelector('main') || document.body;
-            result.sections = [...main.children].map(child => {
-              const rect = child.getBoundingClientRect();
-              if (rect.height < 20) return null;
-              const cs = getComputedStyle(child);
-              if (cs.display === 'none' || cs.visibility === 'hidden') return null;
-              return {
-                tag: child.tagName.toLowerCase(),
-                classes: child.className.toString().slice(0, 200),
-                top: Math.round(rect.top + window.scrollY),
-                height: Math.round(rect.height),
-                bg: cs.backgroundColor,
-                bgImage: cs.backgroundImage !== 'none' ? cs.backgroundImage : null,
-                text: child.innerText.slice(0, 1500),
-                images: [...child.querySelectorAll('img')].slice(0, 30).map(img => ({
-                  src: img.src,
-                  alt: img.alt,
-                  w: img.offsetWidth,
-                  h: img.offsetHeight
-                })).filter(i => i.src && i.w > 30),
-                links: [...child.querySelectorAll('a')].slice(0, 30).map(a => ({
-                  text: a.innerText.trim(),
-                  href: a.getAttribute('href') || ''
-                })).filter(l => l.text)
-              };
-            }).filter(Boolean);
-
-            // 4. Product/card data (e-commerce sites)
-            const productLinks = document.querySelectorAll('a[href*="/product"], a[href*="/shop"], a[href*="/item"]');
-            const seen = new Set();
-            result.products = [...productLinks].map(link => {
-              const href = (link.getAttribute('href') || '').split('?')[0];
-              if (seen.has(href) || !href) return null;
-              seen.add(href);
-              const img = link.querySelector('img');
-              const heading = link.querySelector('h2, h3, h4');
-              const spans = link.querySelectorAll('span, div');
-              let price = '';
-              for (const s of spans) {
-                if (s.innerText.match(/^\\$\\d/)) price = s.innerText.trim();
-              }
-              return {
-                href,
-                image: img?.src || '',
-                imageAlt: img?.alt || '',
-                title: heading?.innerText?.trim() || '',
-                price,
-                fullText: link.innerText.trim().slice(0, 300)
-              };
-            }).filter(Boolean);
-
-            // 5. Footer
-            const footer = document.querySelector('footer');
-            if (footer) {
-              result.footer = {
-                text: footer.innerText.trim(),
-                links: [...footer.querySelectorAll('a')].map(a => ({
-                  text: a.innerText.trim(),
-                  href: a.href
-                })).filter(l => l.text),
-                socialLinks: [...footer.querySelectorAll(
-                  'a[href*="instagram"], a[href*="tiktok"], a[href*="pinterest"], a[href*="facebook"], a[href*="twitter"], a[href*="youtube"], a[href*="linkedin"]'
-                )].map(a => ({ href: a.href }))
-              };
-            }
-
-            // 6. Fonts (from Google Fonts links or @font-face)
-            const fontLinks = [...document.querySelectorAll('link[href*="fonts.googleapis"], link[href*="fonts.gstatic"]')]
-              .map(l => l.href);
-            result.fonts = fontLinks;
-
-            return result;
-          }
-        """)
-
-        import json
-        open(f"{out_dir}/content.json", "w").write(json.dumps(data, indent=2))
-        browser.close()
+  const html = await page.content();
+  require('fs').writeFileSync('reference.html', html);
+  await browser.close();
+})();
 ```
 
-## Phase 3: Image URL Verification
+### Fallback Method — Python Playwright
 
-**Critical step.** Scraped image URLs are frequently truncated, expired, or incorrect. Always verify every image URL before using it.
+Only use this if Node.js Playwright fails.
 
-```python
-import subprocess
-
-def verify_images(urls):
-    """Returns dict of url -> status_code. Fix any non-200."""
-    results = {}
-    for url in urls:
-        try:
-            r = subprocess.run(
-                ['curl', '-s', '-o', '/dev/null', '-w', '%{http_code}', '-L', url],
-                capture_output=True, text=True, timeout=10
-            )
-            results[url] = r.stdout.strip()
-        except:
-            results[url] = 'TIMEOUT'
-    return results
+```bash
+pip install playwright
+playwright install chromium
 ```
 
-### Common Image URL Problems & Fixes
+### Chromium Binary Discovery
 
-| Problem | Cause | Fix |
-|---------|-------|-----|
-| Truncated filename | Playwright serialized long filename | Re-scrape with full `img.src` extraction |
-| Wrong extension | Site serves `.png` but URL says `.jpg` | Check actual Content-Type header |
-| Missing query params | Shopify/CDN URLs need `&width=` / `&crop=` | Add sizing params back |
-| 403 Forbidden | Hotlink protection | Download image locally to `public/images/` |
-| Expired signed URL | Temporary CDN token | Download and serve locally |
+If the basic command returns nothing:
 
-### Re-scrape strategy for broken images
+```bash
+ls -la /nix/store/*ungoogled-chromium*/bin/chromium 2>/dev/null | tail -1
 
-If URLs are truncated, run a targeted re-scrape that extracts the full `img.src` property:
-
-```python
-# Target specific broken images by their alt text or position
-data = page.evaluate("""
-  () => [...document.querySelectorAll('img')]
-    .filter(img => img.offsetWidth > 30)
-    .map(img => ({
-      src: img.src,              // Full URL from DOM
-      srcset: img.srcset || '',  // May have higher-res versions
-      alt: img.alt,
-      width: img.offsetWidth,
-      top: Math.round(img.getBoundingClientRect().top + window.scrollY)
-    }))
-""")
+# Or broader search
+find /nix/store -name "chromium" -type f -executable 2>/dev/null | sort | tail -1
 ```
 
-### Upgrading image resolution
+---
 
-CDN images often have size params you can modify:
+## Phase 2: Reconnaissance
 
-```python
-# Shopify CDN
-url = url.replace("width=100", "width=800").replace("height=100", "height=800")
+### Desktop Recon (1440px)
 
-# Sanity CDN
-url = url.replace("w=100", "w=1200").replace("h=100", "h=1200")
+1. Navigate to the target URL at 1440×900 viewport
+2. Take a full-page screenshot → reference-desktop.png
+3. Extract DOM structure: header/nav, hero, content grids, footer
+4. Extract computed styles: colors, fonts, spacing, border-radius, shadows
 
-# General pattern: find width/height params and increase them
-import re
-url = re.sub(r'width=\d+', 'width=800', url)
-url = re.sub(r'height=\d+', 'height=800', url)
-```
+### Mobile Recon (375px)
+
+1. Resize viewport to 375×812
+2. Take screenshot → reference-mobile.png
+3. Note: hamburger menu, stacked cards, hidden elements, touch targets (44×44px min), font adjustments
+
+### Tablet Recon (768px) — Optional
+
+1. Resize to 768×1024
+2. Take screenshot → reference-tablet.png
+3. Note intermediate layout changes
+
+---
+
+## Phase 3: Image Handling
+
+### Default — Download Key Images Locally
+
+Always download essential images to public/images/ so they don't break when CDN URLs expire.
+
+### When CDN URLs Are Acceptable
+
+- Large sets of product images (20+)
+- Reliable CDNs (Unsplash, Pexels, Cloudinary)
+- Temporary prototypes
+
+Reliable free image sources:
+
+- Unsplash: <https://images.unsplash.com/photo-{id}?w={width}&h={height}&fit=crop>
+- Pexels: <https://images.pexels.com/photos/{id}/pexels-photo-{id}.jpeg>
+- DiceBear (avatars): <https://api.dicebear.com/7.x/avataaars/svg?seed={name}>
+- Placeholder: <https://placehold.co/{width}x{height}/{bg}/{text}>
+
+### Image Replacement Strategy
+
+1. Brand logos → Custom SVG or text-based logo
+2. Hero images → Unsplash photos matching the category
+3. Product photos → Unsplash with relevant search terms
+4. User avatars → DiceBear generated avatars
+5. Icons → Lucide React or similar open-source library
+
+---
 
 ## Phase 4: Build the Clone
 
-### Project structure
+### Structure
 
-```text
-artifacts/{clone-name}/
-  client/src/
-    components/
-      TopBanner.tsx       # Announcement/promo bar
-      Header.tsx          # Logo + nav + icons
-      HeroSection.tsx     # Hero images/video
-      ProductCarousel.tsx # Scrollable product cards
-      EditorialSections.tsx # Full-width editorial imagery
-      Footer.tsx          # Footer columns + newsletter + social
-    pages/
-      home.tsx            # Assembles all components with real data
-    index.css             # Design tokens, fonts, utilities
-```
+src/
+  components/ (Header, Hero, CategoryNav, ProductCard, ProductGrid, Footer)
+  pages/ (Home, Browse, Detail, Sell)
+  styles/ (variables.css)
 
-### Design token mapping
+### CSS Variables from Extracted Tokens
 
-Extract these from the scrape and set as CSS custom properties:
+Use :root variables for colors, typography, spacing, and borders.
 
-```css
-:root {
-  --background: /* body background-color from scrape */;
-  --foreground: /* body color from scrape */;
-  --border: /* border color observed */;
-  --top-banner: /* banner background-color */;
-  --font-sans: /* primary font family */;
-  --font-serif: /* heading/display font */;
-}
-```
+### Responsive Breakpoints
 
-### Data architecture
+Always implement: 768px (tablet), 1024px (desktop), 1440px (large desktop)
 
-Keep scraped product/content data in the page file (e.g., `home.tsx`) as typed arrays, not in separate JSON files. This keeps the clone self-contained and avoids fetch complexity:
+---
 
-```tsx
-const products = [
-  {
-    image: "https://cdn.shopify.com/...",  // Verified CDN URL
-    name: "PRODUCT NAME",
-    badge: "BEST-SELLER",
-    retailPrice: "$192",
-    salePrice: "$144",
-    href: "/products/slug"
-  },
-  // ...
-];
-```
+## Phase 5: Validation
 
-### Font loading
+### Automated Screenshot Comparison
 
-Add Google Fonts in `index.html`:
+Take clone screenshots at 1440px, 768px, and 375px and compare against references.
 
-```html
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=EB+Garamond:ital@0;1&display=swap" rel="stylesheet">
-```
+### Manual Checklist
 
-## Phase 5: Validation Checklist
+**Layout:** Header height, nav positions, hero proportions, grid columns, footer, container max-width
+**Typography:** Font family/weight, body text size, text colors
+**Spacing:** Card gaps, section padding, margins
+**Mobile:** Navigation works, cards stack, touch targets 44×44px, no horizontal scroll
+**Functionality (functional clones):** Routes work, search/filter works, forms submit, data loads from API
 
-After building, verify:
+---
 
-1. **All images load** — Run the URL verification script against every image URL in your components
-2. **No console errors** — Check browser console logs via the refresh logs tool
-3. **Responsive layout** — Test at 1440px (desktop), 768px (tablet), 375px (mobile)
-4. **Visual fidelity** — Compare your clone's screenshot against the scraped `full_page.png`
-5. **Real content** — No placeholder text ("Lorem ipsum"), no stock photos (Unsplash), no made-up prices
-6. **Scroll behavior** — Sticky header, smooth scroll, proper z-indexing
-7. **Hover states** — Image zoom, link opacity changes, button transitions
+## Troubleshooting — Common Scraping Failures
 
-## Gotchas & Lessons Learned
+### Bot Detection / Cloudflare
 
-### SPA sites (React, Next.js, Shopify)
+- Set realistic User-Agent
+- Add random 2-5s delays
+- Try Wayback Machine as fallback
+- Screenshot manually as last resort
 
-- The raw HTML (`curl` output) is typically empty — just a `<div id="root">` or `<div id="app">`
-- You MUST use Playwright with `wait_until="networkidle"` and scroll the page before extracting
-- Content is rendered client-side — only `page.evaluate()` can access it
+### Cookie Consent Banners
 
-### Lazy-loaded content
+- Auto-click common accept/agree buttons
+- Wait 1s for banner to disappear
 
-- Scroll the ENTIRE page before extracting. Use multiple scroll passes with delays (see example below)
-- Some content loads only when scrolled into viewport — a single `scrollTo(bottom)` may not trigger it
+### Client-Side Rendering Timeouts
 
-```python
-for _ in range(8):
-    page.evaluate("window.scrollBy(0, 1500)")
-    page.wait_for_timeout(1500)
-```
+- Use waitUntil: 'networkidle'
+- Wait for specific content selectors
+- Increase timeout to 60s
+- Extract data from **NEXT_DATA** or **INITIAL_STATE** script tags
 
-### Image URL truncation
+### Playwright Launch Failures
 
-- The most common scrape failure. Playwright's DOM serialization and JSON output can silently truncate very long URLs
-- Always verify with `curl -s -o /dev/null -w '%{http_code}'` before using any URL
-- When truncated: re-scrape specifically targeting that image's `img.src` property
+- Verify Chromium path exists
+- Add --disable-gpu flag
+- Fall back to raw fetch() for static HTML
 
-### Hotlink protection
+---
 
-- Some sites block external embedding of their images (403 responses)
-- Solution: Download images to `public/images/` and serve them locally
-- This is also a good fallback for any URL that might expire
+## Ethical Scraping — Rate Limiting and robots.txt
 
-### Dynamic pricing / variant data
+### Check robots.txt First
 
-- Product prices and variant names often render via JavaScript after the card enters viewport
-- Extract `innerText` from the product link container — prices are usually in nested spans
-- Check for `text-decoration: line-through` to identify retail vs sale prices
+- Fetch /robots.txt before scraping
+- Respect Disallow directives
 
-### CDN URL patterns
+### Rate Limiting
 
-- **Shopify**: `cdn.shopify.com/s/files/...?width=X&height=Y&crop=center`
-- **Sanity**: `cdn.sanity.io/images/{project}/{dataset}/{hash}.{ext}?w=X&h=Y&q=80&auto=format`
-- **Contentful**: `images.ctfassets.net/{space}/{id}/{name}?w=X&h=X`
-- **Cloudinary**: `res.cloudinary.com/{cloud}/image/upload/w_X,h_Y/{path}`
+- 2-5 second delays between page loads
+- Max 10 pages per site
+- Descriptive User-Agent
+- Stop on 429 responses
 
-## Quick Start
+### Scope Limits
 
-```bash
-# 1. Find Chromium
-find /nix/store -name chromium -type f 2>/dev/null | head -5
+You only need:
 
-# 2. Install Playwright
-pip install playwright
+- 1 homepage screenshot + HTML
+- 1-2 inner page screenshots
+- Extracted CSS variables and layout structure
 
-# 3. Run recon
-python3 scripts/recon.py https://target-site.com
-
-# 4. Run deep scrape
-python3 scripts/scrape_content.py https://target-site.com
-
-# 5. Verify images
-python3 scripts/verify_images.py
-
-# 6. Create artifact and build components
-# Use the artifacts skill, then build components from scraped data
-
-# 7. Final verification
-# Check all images load, no console errors, responsive layout
-```
+Do NOT scrape every page or download every image.

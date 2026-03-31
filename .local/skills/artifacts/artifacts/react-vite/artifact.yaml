@@ -26,3 +26,6 @@ service_configs:
 initial_open_files:
   - src/App.tsx
   - src/index.css
+  - package.json
+  - tsconfig.json
+  - vite.config.ts

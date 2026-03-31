@@ -70,7 +70,9 @@ You can import using `@/` to avoid relative paths (e.g., `import { Button } from
 
 ## Styling
 
-Use react-native's `StyleSheet` for styling.
+Use react-native's `StyleSheet` for styling. Reference colors from `constants/colors.ts` via the `useColors()` hook in `hooks/useColors.ts` — avoid hardcoding hex values in components.
+
+If this Expo artifact is part of a multi-artifact project (e.g., alongside a react-vite web app), read `design_and_aesthetics.md` before writing component code — it covers how to sync colors, fonts, and radius from the sibling artifact so both share the same visual identity.
 
 ## Networking
 - Use `@/lib/query-client` for all data fetching.
@@ -184,7 +186,7 @@ Avoid these common mistakes:
     - Use reloadAppAsync function from expo in tandem with the ErrorBoundary component to restart the app when the app crashes. `import { reloadAppAsync } from 'expo'`. Do not use reloadAsync from "expo-updates" for this purpose.
     - The ErrorBoundary is a minimal class component (required by React's error boundary API) with a functional ErrorFallback component for the UI. The consuming component should remain functional.
     - Do not add local state to the ErrorFallback component because it only renders if the app crashes. It should be used as is, unless the user requests it. (Note: dev-mode-only state guarded by `__DEV__` is acceptable for debugging features.)
-    - The ErrorFallback component uses useColorScheme and useSafeAreaInsets for proper theming and positioning. The ErrorBoundary wrapper uses React's class component error boundary API (getDerivedStateFromError, componentDidCatch).
+    - The ErrorFallback component uses useColors() and useSafeAreaInsets for theming and positioning. The ErrorBoundary wrapper uses React's class component error boundary API (getDerivedStateFromError, componentDidCatch).
 
 - react-native-maps:
     - Pin version to exactly 1.18.0 in package.json (e.g., `"react-native-maps": "1.18.0"`) — this is the only version compatible with Expo Go currently. Other versions will cause crashes or compatibility issues.
@@ -292,11 +294,22 @@ Do not use Stripe unless the user explicitly requests it.
 - User can scan QR code from Replit's URL bar menu to test on their physical device via Expo Go
 - Hot module reloading (HMR) is enabled - no need to restart the dev server for code changes
 
+## Publishing
+
+Replit has a built-in publishing flow for Expo apps called **Expo Launch**. Expo Launch handles the production build and **App Store (iOS) submission only** — the user triggers it by clicking the Publish button. More information can be found in the Replit docs which you can search. Only call `suggestDeploy()` after the app is fully built and verified (see `## Workflow` for when to call it), and only when iOS publishing is relevant. Do not call it mid-build or in response to a planning question.
+
+- If the user asks what **Expo Launch** is: explain it is Replit's built-in flow for building and submitting the app to the App Store (iOS). More information can be found in the Replit docs which you can search.
+- If the user asks about publishing to **Google Play (Android)**: let them know this is **not currently supported** on Replit. Do not call `suggestDeploy()` for Android-only requests.
+- Do not attempt to help with EAS CLI commands or manual App Store submission processes — explain that Replit's Expo Launch handles App Store publishing. More information can be found in the Replit docs which you can search.
+- `suggestDeploy()` only works from the main agent context. Do not call it from a task-agent or subrepl session — it will return `success: false`. Instead, remind the user to publish from the main project after merging.
+
 ## Forbidden Changes
 - NEVER edit package.json directly. See package management skill for instructions on installing packages.
 - NEVER change bundle identifiers after initial setup unless user explicitly requests it.
 - NEVER downgrade the version of React Native or Expo that is declared in package.json.
 - NEVER run `npx expo start` or `npx expo` directly in a shell. Use the `restart_workflow` tool instead — running expo directly will miss environment variables (like `PORT`) injected into the workflow.
+- NEVER create app.config.ts or app.config.js. The project MUST use a static app.json for Expo configuration. Dynamic config files (app.config.ts/js) break the Expo Launch build process. If you need to modify Expo settings, edit app.json directly. If an existing app.config.ts or app.config.js is present in the project, migrate its settings to app.json and delete the dynamic config file.
+- NEVER run or suggest running EAS CLI commands (`npx eas build`, `npx eas submit`, `npx eas update`, `npx eas init`, `eas build`, etc.). iOS publishing is handled via Replit's Expo Launch.
 
 ## References
 
@@ -304,7 +317,7 @@ Before writing code, identify whether any reference below applies to the task. I
 
 - `references/first_build.md` - Use this reference when first building an Expo app (from 0 to 1)
 - `references/react_context.md` - Use this reference when creating or modifying shared state with React context, provider composition, or context-based hooks.
-- `references/design_and_aesthetics.md` - Use this reference when designing or restyling UI, selecting iconography, or implementing animations and visual polish.
+- `references/design_and_aesthetics.md` - Use this reference when designing or restyling UI, selecting iconography, or implementing animations and visual polish. Skip the "Cross-Artifact Design Consistency" section unless this expo artifact is part of a multi-artifact project with a sibling web app.
 - `references/device_features_and_permissions.md` - Use this reference when implementing camera, location, notifications, contacts, file uploads, or any permission request/denial flow.
 - mobile-ui skill's `references/keyboard.md` - Use this reference when implementing any keyboard handling — forms with multiple inputs, chat/messaging UIs, FlatList with inputs, or keyboard utilities (dismiss, detect visibility).
 - mobile-ui skill's `references/sheets.md` - Use this reference when implementing modals, sheets, formSheet presentations, auth flows (login/register), wizards, or overlay UI.

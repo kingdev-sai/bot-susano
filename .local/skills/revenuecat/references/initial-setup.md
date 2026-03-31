@@ -38,9 +38,20 @@ Do not reference the @replit/revenuecat-sdk SDK docs during initial setup unless
 
 5a. Implement the code for `lib/revenuecat.tsx` in the client app directory using the provided code snippet.
 
-5b. Modify App.tsx as such:
+5b. Modify App.tsx (or the root layout file) as such:
 
-  1. Import and call the `initializeRevenueCat` function at the top-level of the file.
+  1. Import `initializeRevenueCat` and call it at the top-level of the file with a try-catch block.
+
+     ```ts
+     import { Alert } from "react-native"
+
+     try {
+      initializeRevenueCat();
+     } catch (err: any) {
+      Alert.alert("RevenueCat Unavailable", err?.message ?? "Unknown error");
+     }
+     ```
+
   2. Wrap the app in the `SubscriptionProvider` provider.
 
 5c. Use the `useSubscription` hook whenever RevenueCat functionality is required.
@@ -449,9 +460,11 @@ import Purchases from "react-native-purchases";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import Constants from "expo-constants";
 
-const REVENUECAT_TEST_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_TEST_API_KEY;
-const REVENUECAT_IOS_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY;
-const REVENUECAT_ANDROID_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY;
+// REPLIT AGENT: Hardcode keys directly as strings in code; do not access via `process.env`
+// It is OK to do so here since these keys are public keys.
+const REVENUECAT_TEST_API_KEY = "<REVENUECAT_TEST_API_KEY>";
+const REVENUECAT_IOS_API_KEY = "<REVENUECAT_IOS_API_KEY>";
+const REVENUECAT_ANDROID_API_KEY = "<REVENUECAT_ANDROID_API_KEY>";
 
 export const REVENUECAT_ENTITLEMENT_IDENTIFIER = ""; // REPLIT AGENT: Use the entitlement identifier obtained from the seed script. e.g. "premium"
 

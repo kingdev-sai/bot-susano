@@ -461,6 +461,9 @@ async function onBot({ models }) {
     }
   ]);
 
+  // ── Restore any pending reply/reaction callbacks saved before last restart ──
+  try { require('./includes/login/statePersist').restore(); } catch (_) {}
+
   // ── Build listen args and start listener ──────────────────
   const listenArgs = {};
   listenArgs['api']         = _api;
@@ -763,6 +766,7 @@ async function onBot({ models }) {
           { message: 'State saved — exiting for watchdog restart.', color: 'white' }
         ]);
       } catch (_) {}
+      try { require('./includes/login/statePersist').save(); } catch (_) {}
       setTimeout(() => process.exit(0), 500);
     }
   }, 15 * 60 * 1000);
@@ -789,6 +793,7 @@ async function onBot({ models }) {
         { message: `Could not save cookies: ${e.message}`, color: 'white' }
       ]);
     }
+    try { require('./includes/login/statePersist').save(); } catch (_) {}
     process.exit(0);
   }
 

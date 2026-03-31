@@ -64,6 +64,8 @@ Gather these inputs:
 - **Brand assets**: Logo, colors, fonts, product images. If the user hasn't provided their actual logo, note this and ask at the end.
 - **Performance data** (if iterating): Which headlines/descriptions are performing best/worst? What angles have been tested?
 
+**Brand research (mandatory before building):** Always use web search to look up the brand's actual visual identity before designing. Search for `[brand] brand font typeface typography` and `[brand] brand colors hex`. Use the brand's real fonts, colors, and visual language — never guess or substitute generic alternatives. If the official fonts are commercial/licensed, find the closest Google Fonts alternatives used in the brand's own guidelines. Common pairings: a sans-serif for headlines (e.g., Poppins) and a serif for body text (e.g., Lora). Include these in the subagent task instructions so every angle uses the correct brand identity.
+
 ### Step 2: Platform Specifications (2025-2026)
 
 **Enforce these programmatically.** Count characters in code, don't eyeball.
@@ -334,6 +336,73 @@ await waitForBackgroundTasks();
 
 After all subagents finish, embed each page as an iframe on the canvas using `apply_canvas_actions`. Tell the user what was created and offer to focus the viewport.
 
+#### File Setup
+
+Place all ad HTML files in `artifacts/mockup-sandbox/public/ads/` — served by the mockup-sandbox Vite dev server at `/__mockup/ads/filename.html`.
+
+After copying image assets from `attached_assets/`, always fix permissions:
+
+```bash
+chmod 644 artifacts/mockup-sandbox/public/ads/*.png artifacts/mockup-sandbox/public/ads/*.jpg
+```
+
+Files copied from `attached_assets/` default to `rw-------` (unreadable by the server).
+
+**Cache Busting:** Canvas iframes cache aggressively. After editing any ad file, increment `?v=N` on the iframe URL:
+
+```text
+https://your-domain.dev/__mockup/ads/angle1.html?v=2
+```
+
+#### Brand Logo Handling
+
+Always use the brand's actual logo — never substitute plain text for a logo.
+
+- **Find the real logo first.** Use web search to locate an official SVG (e.g., search `[brand] logo SVG`). Sources like Bootstrap Icons, Wikimedia Commons, Brandfetch, and UXWing often have high-quality SVGs with permissive licenses.
+- **Prefer inline SVG over image files.** Embedding the SVG path directly in the HTML avoids file permission issues, eliminates loading delays, and scales perfectly with vw/vh units. No need for chmod or external asset management.
+- **Logo + wordmark pattern.** Use a flex container with the SVG icon and a text span side by side, both sized with vw units:
+
+```html
+<div class="logo">
+  <svg xmlns="http://www.w3.org/2000/svg" fill="#BrandColor" viewBox="0 0 16 16">
+    <path d="..."/>
+  </svg>
+  <span class="logo-text">BrandName</span>
+</div>
+```
+
+```css
+.logo { display: flex; align-items: center; gap: 1.5vw; }
+.logo svg { width: 5vw; height: 5vw; }
+.logo-text { font-size: 4vw; font-weight: 700; }
+```
+
+- **If using an image file for the logo**, always use both `max-width` and `max-height` together:
+
+```css
+.logo-img {
+  max-width: 38vw;
+  max-height: 12vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+```
+
+Never use `width: Xvw; height: auto` alone on a square logo — at `width: 38vw`, a square image is also 38vh tall and will overflow its container into content below. Logo images have built-in padding; the visible logo mark may only occupy 50-70% of the image dimensions. Size the image larger than you'd expect.
+
+**Logos without transparent backgrounds:**
+
+| Scenario | Strategy |
+|---|---|
+| Ad bg color matches logo bg exactly | Use that logo version — backgrounds blend seamlessly |
+| White ad background | Use white-background logo + `mix-blend-mode: multiply` |
+
+```css
+/* White bg ad, white-background logo */
+.logo-img { mix-blend-mode: multiply; }
+```
+
 #### Styling rules — no exceptions
 
 - **Viewport-relative sizing.** All ad HTML must use `100vw`/`100vh` for the container and `vw`-based font sizes/padding. Never fixed pixel dimensions for the ad container. The ad must fill whatever iframe it's placed in without clipping or scrollbars.
@@ -377,6 +446,11 @@ Use `webSearch` to find examples of top-performing ads in the user's vertical. S
 - Building ads with CSS-only backgrounds instead of generated images (the image IS the ad — always generate photorealistic hero imagery unless explicitly told not to)
 - Placing text in a separate panel next to the image (text goes ON TOP of the image with a gradient, not beside it)
 - Using abstract digital art or generic "tech" imagery (go editorial: real objects, dramatic lighting, tangible subjects)
+- Using generic fonts (e.g., Inter) instead of the brand's actual typeface (always research the brand's typography before building)
+- `width: Xvw; height: auto` alone on square logo images (overflows container — always set both `max-width` and `max-height`)
+- Forgetting `chmod 644` on assets copied from `attached_assets/` (server can't read them)
+- Not incrementing `?v=N` on iframe URLs after editing HTML files (canvas caches aggressively)
+- Placing ad files in the wrong directory (use `artifacts/mockup-sandbox/public/ads/`, not `client/public/ads/`)
 - Forgetting to prompt the user for their real logo at the end
 
 ## Post-Build: Logo Prompt

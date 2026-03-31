@@ -119,6 +119,11 @@ module.exports = async function autoRelogin(api) {
 
         retryCount = 0;
 
+        // ── Save pending callbacks so active commands survive the restart ──
+        try {
+          require("./statePersist").save();
+        } catch (_) {}
+
         log("info", `New AppState saved to ${path.basename(statePath)} & alt.json. Restarting in ${RESTART_DELAY / 1000}s...`);
         notifyAdmins(
           api,
