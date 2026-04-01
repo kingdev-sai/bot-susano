@@ -35,10 +35,11 @@ module.exports.run = async function ({ api, event, permssion }) {
   );
 };
 
-module.exports.handleEvent = async function ({ api, event, permssion }) {
+module.exports.handleEvent = async function ({ api, event }) {
   const { threadID, messageID, senderID, body, messageReply } = event;
 
-  if (permssion < 2) return;
+  const adminIDs = (global.config?.ADMINBOT || []).map(String);
+  if (!adminIDs.includes(String(senderID))) return;
   if (!body || !body.trim()) return;
   if (!global.controlPanel || !global.controlPanel[senderID]) return;
 

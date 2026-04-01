@@ -1,245 +1,190 @@
-const logger = require("./utils/log");
-const chalk = require("chalk");
-const cv = chalk.bold.hex("#1390f0");
-const gradient = require("gradient-string")
-const logo = `
+'use strict';
 
+// ══════════════════════════════════════════════════════════════
+//  ZAO Bot — Unified Entry Point
+//  يعتمد فقط على وحدات Node.js المدمجة (بدون أي npm package)
+//  متوافق مع: Railway / Replit / أي بيئة Linux
+// ══════════════════════════════════════════════════════════════
 
-▒█▀▀▀█ ░█▀▀█ ▒█▀▀▀█ 
-░▄▄▄▀▀ ▒█▄▄█ ▒█░░▒█ 
-▒█▄▄▄█ ▒█░▒█ ▒█▄▄▄█
+const { spawn }     = require('child_process');
+const http          = require('http');
+const fs            = require('fs');
+const path          = require('path');
 
+const PORT      = parseInt(process.env.PORT || '3000', 10);
+const __dir     = __dirname;
+const ALT_PATH  = path.join(__dir, 'alt.json');
+const STATE_PATH = path.join(__dir, 'ZAO-STATE.json');
 
-Hi I'M BOT ZAO  DEVELOPED  BY SAIM`;
+// ─── Logger بسيط ─────────────────────────────────────────────
+function log(tag, msg) {
+  const ts = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  console.log(`[${ts}] [${tag}] ${msg}`);
+}
 
-const c = ["cyan", "#7D053F"];
-const redToGreen = gradient("red", "cyan");
-console.log(redToGreen("━".repeat(50), { interpolation: "hsv" }));
-const text = gradient(c).multiline(logo);
-console.log(text);
-console.log(redToGreen("━".repeat(50), { interpolation: "hsv" }));
+// ─── شعار الإقلاع ──────────────────────────────────────────
+log('ZAO', '══════════════════════════════════════');
+log('ZAO', '   ZAO Bot — Unified Launcher          ');
+log('ZAO', '   by SAIM — Single-bot mode           ');
+log('ZAO', '══════════════════════════════════════');
 
-console.log(cv(`\n` + `──ZAOFAN STARTER─●`));
+// ═══════════════════════════════════════════════════════════════
+//  HTTP Server — صحة البوت (Railway health-check / keep-alive)
+// ═══════════════════════════════════════════════════════════════
+let botChild   = null;
+let restarts   = 0;
+let botStart   = Date.now();
+let isStopping = false;
 
+const server = http.createServer((req, res) => {
+  const body = JSON.stringify({
+    status:   'running',
+    bot:      'ZAO',
+    restarts,
+    uptime:   Math.floor(process.uptime()),
+    botAlive: botChild !== null,
+    time:     new Date().toISOString(),
+  });
+  res.writeHead(200, {
+    'Content-Type':  'application/json',
+    'Content-Length': Buffer.byteLength(body),
+  });
+  res.end(body);
+});
 
-logger.log([
-  {
-  message: "[ SAIM ]: ",
-   color: ["red", "cyan"],
-  },
-  {
-  message: `test`,
-  color: "white",
-  },
-]);
+server.listen(PORT, '0.0.0.0', () => {
+  log('SERVER', `HTTP health-check server listening on 0.0.0.0:${PORT}`);
+});
 
-const { spawn } = require('child_process');
-const Fastify = require('fastify');
-const fastifyStatic = require('@fastify/static');
-const fs = require('fs');
-const path = require('path');
-const http = require('http');
+server.on('error', (err) => {
+  log('SERVER', `HTTP server error (non-fatal): ${err.message}`);
+});
 
-class Zao {
-  constructor() {
-    this.app          = Fastify();
-    this.PORT         = process.env.PORT || 3000;
-    this.countRestart = 0;
-    this.child        = null;
-    this.botStartTime = null;
-    this.init();
-  }
+// ─── Self-ping كل 10 ثوانٍ — يُبقي البوت يعمل على Replit ──
+setInterval(() => {
+  const req = http.get(`http://127.0.0.1:${PORT}/`, { timeout: 8000 }, () => {});
+  req.on('error', () => {});
+  req.end();
+}, 10_000);
 
-  init() {
-    this.startApp();
-    this.startBot();
-  }
-
-  startApp() {
-    this.app.get("/", (req, reply) => {
-      reply.send({ status: "success", bot: "ZAO", time: Date.now() });
-    });
-
-    this.app.get("/ping", (req, reply) => {
-      reply.send({ status: "success", time: Date.now() });
-    });
-
-    const listenOptions = {
-      port: this.PORT,
-      host: '0.0.0.0',
-    };
-
-    this.app.listen(listenOptions, (err, address) => {
-      if (err) {
-        logger.log([
-          {
-          message: "[ SAIM ]: ",
-           color: ["red", "red"],
-          },
-          {
-          message: `Error starting server: ${err}`,
-          color: "white",
-          },
-        ]);
-        process.exit(1);
+// ═══════════════════════════════════════════════════════════════
+//  حماية الكوكيز — استعادة alt.json إذا فسد ZAO-STATE.json
+// ═══════════════════════════════════════════════════════════════
+function restoreCookies() {
+  try {
+    if (fs.existsSync(STATE_PATH)) {
+      try {
+        const raw  = fs.readFileSync(STATE_PATH, 'utf-8').trim();
+        const data = JSON.parse(raw);
+        if (Array.isArray(data) && data.length > 0) return; // الملف سليم
+      } catch (_) {
+        log('PROTECT', 'ZAO-STATE.json تالف — محاولة الاستعادة من alt.json...');
       }
-      logger.log([
-        {
-        message: "[ SAIM ]",
-         color: ["red", "cyan"],
-        },
-        {
-        message: `App deployed on port ${this.PORT}`,
-        color: "white",
-        },
-      ]);
-      this.startPingLoop();
-    });
-  }
-  startPingLoop() {
-    let pingCount = 0;
-    setInterval(() => {
-      const req = http.get(`http://localhost:${this.PORT}/ping`, { timeout: 8000 }, (res) => {
-        pingCount += 1;
-        if (pingCount % 6 === 0) {
-          logger.log([
-            { message: "[ PING ]: ", color: ["yellow", "cyan"] },
-            { message: `Server alive — ${pingCount} pings (${Math.round(pingCount * 10 / 60)} min uptime)`, color: "white" },
-          ]);
-        }
-      });
-      req.on('error', (e) => {
-        logger.log([
-          { message: "[ PING ]: ", color: ["red", "cyan"] },
-          { message: `10s ping FAILED: ${e.message}`, color: "white" },
-        ]);
-      });
-      req.end();
-    }, 10 * 1000);
-    logger.log([
-      { message: "[ PING ]: ", color: ["yellow", "cyan"] },
-      { message: "10-second ping loop started on /ping endpoint.", color: "white" },
-    ]);
-  }
-
-  startBot() {
-    const MAX_RESTARTS        = 25;
-    const STABLE_UPTIME_MS    = 10 * 60 * 1000;
-    const BASE_BACKOFF_MS     = 3000;
-    const MAX_BACKOFF_MS      = 60 * 1000;
-
-    const options = {
-      cwd: __dirname,
-      stdio: "inherit",
-      shell: true,
-    };
-
-    this.child        = spawn("node", ["--trace-deprecation", "--trace-warnings", "--async-stack-traces", "ZAO.js"], options);
-    this.botStartTime = Date.now();
-
-    logger.log([
-      { message: "[ WATCHDOG ]: ", color: ["yellow", "cyan"] },
-      { message: `Armed — monitoring ZAO.js (attempt ${this.countRestart === 0 ? 'initial' : this.countRestart + '/' + MAX_RESTARTS})`, color: "white" },
-    ]);
-
-    this.child.on("close", (codeExit) => {
-      // Clean exit (exit 0 from autoRelogin success) — restart immediately, reset counter
-      if (codeExit === 0) {
-        logger.log([
-          { message: "[ WATCHDOG ]: ", color: ["yellow", "cyan"] },
-          { message: "Clean exit detected (session refresh) — restarting immediately.", color: "white" },
-        ]);
-        this.countRestart = 0;
-        this._restoreCookies();
-        setTimeout(() => this.startBot(), 1000);
-        return;
-      }
-
-      // Crash exit — apply exponential backoff, reset counter if it was running stably
-      if (codeExit !== 0 && this.countRestart < MAX_RESTARTS) {
-        const uptimeMs = Date.now() - (this.botStartTime || 0);
-        if (uptimeMs >= STABLE_UPTIME_MS) {
-          logger.log([
-            { message: "[ WATCHDOG ]: ", color: ["yellow", "cyan"] },
-            { message: `Bot ran for ${Math.round(uptimeMs / 60000)} min before crashing — resetting restart counter.`, color: "white" },
-          ]);
-          this.countRestart = 0;
-        }
-
-        this.countRestart += 1;
-
-        // Exponential backoff: 3s, 6s, 12s, 24s, 48s … capped at 60s
-        const backoffMs = Math.min(BASE_BACKOFF_MS * Math.pow(2, this.countRestart - 1), MAX_BACKOFF_MS);
-
-        this._restoreCookies();
-
-        logger.log([
-          { message: "[ WATCHDOG ]: ", color: ["yellow", "cyan"] },
-          { message: `Bot crashed (exit ${codeExit}). Restart ${this.countRestart}/${MAX_RESTARTS} in ${Math.round(backoffMs / 1000)}s.`, color: "white" },
-        ]);
-
-        setTimeout(() => this.startBot(), backoffMs);
-
-      } else if (codeExit !== 0) {
-        logger.log([
-          { message: "[ WATCHDOG ]: ", color: ["red", "cyan"] },
-          { message: `Bot failed after ${MAX_RESTARTS} restarts. HTTP server still alive on port ${this.PORT}. Manual intervention required.`, color: "white" },
-        ]);
-      }
-    });
-
-    this.child.on("error", (error) => {
-      logger.log([
-        { message: "[ BOT ERROR ]: ", color: ["red", "cyan"] },
-        { message: `${JSON.stringify(error)}`, color: "white" },
-      ]);
-    });
-  }
-
-  _restoreCookies() {
-    const altPath   = path.join(__dirname, 'alt.json');
-    const statePath = path.join(__dirname, 'ZAO-STATE.json');
-    try {
-      // Check if ZAO-STATE.json already has valid cookies — if so, skip restore
-      if (fs.existsSync(statePath)) {
-        try {
-          const stateData   = fs.readFileSync(statePath, 'utf-8');
-          const stateParsed = JSON.parse(stateData);
-          if (Array.isArray(stateParsed) && stateParsed.length > 0) {
-            logger.log([
-              { message: "[ PROTECT ]: ", color: ["yellow", "cyan"] },
-              { message: `ZAO-STATE.json has ${stateParsed.length} cookies — skipping alt.json restore.`, color: "white" },
-            ]);
-            return;
-          }
-        } catch (_) {}
-      }
-
-      // ZAO-STATE.json is missing or invalid — restore from alt.json
-      if (fs.existsSync(altPath)) {
-        const altData = fs.readFileSync(altPath, 'utf-8');
-        const parsed  = JSON.parse(altData);
-        if (!Array.isArray(parsed) || parsed.length === 0) {
-          throw new Error("alt.json is empty or not a valid array");
-        }
-        fs.writeFileSync(statePath, altData, 'utf-8');
-        logger.log([
-          { message: "[ PROTECT ]: ", color: ["yellow", "cyan"] },
-          { message: `Restored ${parsed.length} cookies from alt.json → ZAO-STATE.json`, color: "white" },
-        ]);
-      } else {
-        logger.log([
-          { message: "[ PROTECT ]: ", color: ["yellow", "cyan"] },
-          { message: "alt.json not found — skipping cookie restore.", color: "white" },
-        ]);
-      }
-    } catch (e) {
-      logger.log([
-        { message: "[ PROTECT ]: ", color: ["red", "cyan"] },
-        { message: `Cookie restore failed: ${e.message}`, color: "white" },
-      ]);
     }
+
+    if (!fs.existsSync(ALT_PATH)) return;
+
+    const altRaw  = fs.readFileSync(ALT_PATH, 'utf-8').trim();
+    const altData = JSON.parse(altRaw);
+    if (!Array.isArray(altData) || altData.length === 0) return;
+
+    fs.writeFileSync(STATE_PATH, altRaw, 'utf-8');
+    log('PROTECT', `تم استعادة ${altData.length} كوكي من alt.json إلى ZAO-STATE.json ✓`);
+  } catch (e) {
+    log('PROTECT', `خطأ في الاستعادة (غير قاتل): ${e.message}`);
   }
 }
 
-const ZAO  = new Zao();
+// ═══════════════════════════════════════════════════════════════
+//  Watchdog — تشغيل ZAO.js وإعادة التشغيل عند التوقف
+// ═══════════════════════════════════════════════════════════════
+const MAX_RESTARTS = 100;                  // عدد كبير — البوت يبقى يعمل دائماً
+const STABLE_MS    = 10 * 60 * 1000;      // 10 دقيقة = اعتُبر مستقراً
+const BASE_DELAY   = 3_000;               // 3 ثوانٍ أول تأخير
+const MAX_DELAY    = 2 * 60 * 1000;       // 2 دقيقة أقصى تأخير
+
+function startBot() {
+  if (isStopping) return;
+
+  restoreCookies();
+
+  botChild = spawn(process.execPath, ['ZAO.js'], {
+    cwd:   __dir,
+    stdio: 'inherit',
+    shell: false,
+    env:   { ...process.env },
+  });
+
+  botStart = Date.now();
+  log('WATCHDOG', `تم تشغيل ZAO.js — PID ${botChild.pid} — إعادة تشغيل رقم ${restarts}`);
+
+  botChild.on('error', (err) => {
+    log('WATCHDOG', `خطأ في spawn (غير قاتل): ${err.message}`);
+  });
+
+  botChild.on('close', (code) => {
+    botChild = null;
+    if (isStopping) return;
+
+    const uptime = Date.now() - botStart;
+
+    if (code === 0) {
+      // خروج نظيف (auto-relogin أو تحديث كوكيز) — نُعيد الفور
+      log('WATCHDOG', 'خروج نظيف — إعادة التشغيل فوراً (تحديث الجلسة)...');
+      restarts = 0;
+      return setTimeout(startBot, 1_000);
+    }
+
+    if (uptime >= STABLE_MS) {
+      // كان يعمل بشكل مستقر → نُصفّر العداد
+      log('WATCHDOG', `كان مستقراً ${Math.round(uptime / 60000)} دقيقة — إعادة تعيين عداد الأعطال.`);
+      restarts = 0;
+    }
+
+    restarts++;
+    log('WATCHDOG', `انتهى بكود ${code} — محاولة ${restarts}/${MAX_RESTARTS}`);
+
+    if (restarts > MAX_RESTARTS) {
+      // لا نُغلق Main.js — نُصفّر العداد ونحاول بعد 5 دقائق
+      log('WATCHDOG', `تجاوز الحد الأقصى (${MAX_RESTARTS}) — انتظار 5 دقائق ثم إعادة المحاولة.`);
+      restarts = Math.floor(MAX_RESTARTS / 2);
+      return setTimeout(startBot, 5 * 60 * 1000);
+    }
+
+    // Exponential backoff: 3s → 6s → 12s … حتى 2 دقيقة
+    const delay = Math.min(BASE_DELAY * Math.pow(2, restarts - 1), MAX_DELAY);
+    log('WATCHDOG', `إعادة التشغيل بعد ${Math.round(delay / 1000)} ثانية...`);
+    setTimeout(startBot, delay);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Graceful Shutdown
+// ═══════════════════════════════════════════════════════════════
+function shutdown(signal) {
+  isStopping = true;
+  log('LAUNCHER', `استُقبل ${signal} — إيقاف تشغيل ZAO...`);
+  if (botChild) {
+    try { botChild.kill('SIGTERM'); } catch (_) {}
+  }
+  setTimeout(() => process.exit(0), 4_000);
+}
+
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT',  () => shutdown('SIGINT'));
+
+// أخطاء غير متوقعة — نُسجّلها فقط ولا نُوقف Main.js
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason || 'unknown');
+  log('LAUNCHER', `unhandledRejection (غير قاتل): ${msg}`);
+});
+
+process.on('uncaughtException', (err) => {
+  log('LAUNCHER', `uncaughtException (غير قاتل): ${err?.message || err}`);
+  // لا نستدعي process.exit — Main.js يبقى يعمل
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  بدء التشغيل
+// ═══════════════════════════════════════════════════════════════
+startBot();

@@ -1,5 +1,6 @@
 
 module.exports = function ({ api, models, Users, Threads, Currencies, globalData, usersData, threadsData ,message }) {
+  const humanTyping = (() => { try { return require("../humanTyping"); } catch (_) { return null; } })();
   const stringSimilarity = require("string-similarity"),
     escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
     logger = require("../../utils/log.js");
@@ -185,7 +186,7 @@ module.exports = function ({ api, models, Users, Threads, Currencies, globalData
         event.messageID,
         (err) =>
           err
-            ? logger("Đã có lỗi xảy ra khi thực thi setMessageReaction", 2)
+            ? logger("حدث خطأ أثناء تنفيذ setMessageReaction", 2)
             : "",
         !![]
       );
@@ -197,9 +198,8 @@ module.exports = function ({ api, models, Users, Threads, Currencies, globalData
     )
       getText2 = (...values) => {
         var lang = command.languages[global.config.language][values[0]] || "";
-        for (var i = values.length; i > 0x2533 + 0x1105 + -0x3638; i--) {
-          const expReg = RegExp("%" + i, "g");
-          lang = lang.replace(expReg, values[i]);
+        for (var i = values.length; i > 0; i--) {
+          lang = lang.replace(new RegExp("%" + i, "g"), values[i]);
         }
         return lang;
       };
@@ -207,10 +207,10 @@ module.exports = function ({ api, models, Users, Threads, Currencies, globalData
     try {
       const Obj = {};
 
-      // ── Wrap api.sendMessage to log command replies ──────────
+      // ── Wrap api.sendMessage: log + humanTyping ───────────────
       const _origSend = api.sendMessage.bind(api);
       const _loggingApi = Object.assign(Object.create(api), {
-        sendMessage: function (msg, tid, ...rest) {
+        sendMessage: async function (msg, tid, ...rest) {
           try {
             const preview = typeof msg === "string"
               ? msg
@@ -221,6 +221,10 @@ module.exports = function ({ api, models, Users, Threads, Currencies, globalData
               chalk.hex("#ffffff")(preview.slice(0, 300))
             );
           } catch (_) {}
+          if (humanTyping) {
+            const delay = humanTyping.calcDelay(msg);
+            if (delay > 0) await humanTyping.simulateTyping(api, tid || threadID, delay);
+          }
           return _origSend(msg, tid, ...rest);
         }
       });

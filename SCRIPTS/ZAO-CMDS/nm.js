@@ -14,12 +14,13 @@ module.exports.onLoad = function () {
   if (global.nmIntervalStarted) return;
   global.nmIntervalStarted = true;
   setInterval(async () => {
-    if (!global.client?.api) return;
+    const api = global._botApi;
+    if (!api) return;
     for (const [threadID, lockedName] of global.nameLocks.entries()) {
       try {
-        const info = await global.client.api.getThreadInfo(threadID);
+        const info = await api.getThreadInfo(threadID);
         if (info.threadName !== lockedName) {
-          await global.client.api.setTitle(lockedName, threadID);
+          await api.setTitle(lockedName, threadID);
         }
       } catch (e) {}
     }

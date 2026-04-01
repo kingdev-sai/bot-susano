@@ -1,47 +1,62 @@
-module.exports = function ({ api, models, Users, Threads, Currencies, globalData, usersData, threadsData ,message }) {
-    return function ({ event }) {
-        if (!event.messageReply) return;
-        const { handleReply, commands } = global.client
-        const { messageID, threadID, messageReply } = event;
-        if (handleReply.length !== 0) {
-            const indexOfHandle = handleReply.findIndex(e => e.messageID == messageReply.messageID);
-            if (indexOfHandle < 0) return;
-            const indexOfMessage = handleReply[indexOfHandle];
-            const handleNeedExec = commands.get(indexOfMessage.name);
-            if (!handleNeedExec) return api.sendMessage(global.getText('handleReply', 'missingValue'), threadID, messageID);
-            try {
-                var getText2;
-                if (handleNeedExec.languages && typeof handleNeedExec.languages == 'object') 
-                        getText2 = (...value) => {
-                    const reply = handleNeedExec.languages || {};
-                    if (!reply.hasOwnProperty(global.config.language)) 
-                        return api.sendMessage(global.getText('handleCommand', 'notFoundLanguage', handleNeedExec.config.name), threadID, messageID);
-                    var lang = handleNeedExec.languages[global.config.language][value[0]] || '';
-                    for (var i = value.length; i > -0x4 * 0x4db + 0x6d * 0x55 + -0x597 * 0x3; i--) {
-                        const expReg = RegExp('%' + i, 'g');
-                        lang = lang.replace(expReg, value[i]);
-                    }
-                    return lang;
-                };
-                else getText2 = () => {};
-                const Obj = {};
-                Obj.api = api
-                Obj.event = event 
-                Obj.models = models
-                Obj.Users = Users
-                Obj.Threads = Threads 
-                Obj.Currencies = Currencies
-                Obj.message = message;
-                Obj.usersData = usersData;
-                Obj.threadsData = threadsData;
-                Obj.handleReply = indexOfMessage
-                Obj.models = models
-                Obj.getText = getText2
-                handleNeedExec.handleReply(Obj);
-                return;
-            } catch (error) {
-                return api.sendMessage(global.getText('handleReply', 'executeError', error), threadID, messageID);
-            }
+module.exports = function ({ api, models, Users, Threads, Currencies, globalData, usersData, threadsData, message }) {
+  const humanTyping = (() => { try { return require("../humanTyping"); } catch (_) { return null; } })();
+
+  return function ({ event }) {
+    if (!event.messageReply) return;
+    const { handleReply, commands } = global.client;
+    const { messageID, threadID, messageReply } = event;
+    if (!handleReply || handleReply.length === 0) return;
+
+    const indexOfHandle = handleReply.findIndex(e => e.messageID == messageReply.messageID);
+    if (indexOfHandle < 0) return;
+
+    const indexOfMessage = handleReply[indexOfHandle];
+    const handleNeedExec = commands.get(indexOfMessage.name);
+    if (!handleNeedExec) return api.sendMessage(global.getText('handleReply', 'missingValue'), threadID, messageID);
+
+    try {
+      var getText2;
+      if (handleNeedExec.languages && typeof handleNeedExec.languages == 'object') {
+        getText2 = (...value) => {
+          const reply = handleNeedExec.languages || {};
+          if (!reply.hasOwnProperty(global.config.language)) return '';
+          var lang = handleNeedExec.languages[global.config.language][value[0]] || '';
+          for (var i = value.length; i > 0; i--) {
+            lang = lang.replace(new RegExp('%' + i, 'g'), value[i]);
+          }
+          return lang;
+        };
+      } else {
+        getText2 = () => {};
+      }
+
+      const _origSend = api.sendMessage.bind(api);
+      const _wrappedApi = Object.assign(Object.create(api), {
+        sendMessage: async function (msg, tid, ...rest) {
+          if (humanTyping) {
+            const delay = humanTyping.calcDelay(msg);
+            if (delay > 0) await humanTyping.simulateTyping(api, tid || threadID, delay);
+          }
+          return _origSend(msg, tid, ...rest);
         }
-    };
-}
+      });
+
+      const Obj = {
+        api: _wrappedApi,
+        event,
+        models,
+        Users,
+        Threads,
+        Currencies,
+        message,
+        usersData,
+        threadsData,
+        handleReply: indexOfMessage,
+        getText: getText2
+      };
+      handleNeedExec.handleReply(Obj);
+    } catch (error) {
+      return api.sendMessage(global.getText('handleReply', 'executeError', error), threadID, messageID);
+    }
+  };
+};

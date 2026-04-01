@@ -3,7 +3,7 @@ const axios = require("axios");
 const GEMINI_API_KEY = "AIzaSyCmHRZU-cixoa6Us0ValgjKPhAX-W1-2vY";
 
 module.exports.config = {
-  name: "بلود",
+  name: "زاو",
   version: "2.0.0",
   hasPermssion: 0,
   credits: "لحواك كحبة تسرقني نك مك",

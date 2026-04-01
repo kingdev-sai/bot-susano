@@ -1,46 +1,62 @@
-module.exports = function ({ api, models, Users, Threads, Currencies, globalData, usersData, threadsData , message }) {
-    const logger = require("../../utils/log.js")
-    return function ({ event }) {
-        const { allowInbox } = global.config;
-        const { userBanned, threadBanned } = global.data;
-        const { commands, eventRegistered } = global.client;
-        var { senderID, threadID } = event;
-        var senderID = String(senderID);
-        var threadID = String(threadID);
-        if (userBanned.has(senderID) || threadBanned.has(threadID) || allowInbox === false && senderID == threadID) return;
-        for (const eventReg of eventRegistered) {
-            const cmd = commands.get(eventReg);
-            var getText2;
+module.exports = function ({ api, models, Users, Threads, Currencies, globalData, usersData, threadsData, message }) {
+  const humanTyping = (() => { try { return require("../humanTyping"); } catch (_) { return null; } })();
 
-            if (cmd.languages && typeof cmd.languages == 'object') 
-                getText2 = (...values) => {
-                const commandModule = cmd.languages || {};
-                if (!commandModule.hasOwnProperty(global.config.language)) 
-                    return api.sendMessage(global.getText('handleCommand','notFoundLanguage', cmd.config.name), threadID, event.messageID); 
-                var lang = cmd.languages[global.config.language][values[0]] || '';
-                for (var i = values.length; i > 0x16c0 + -0x303 + -0x1f * 0xa3; i--) {
-                    const expReg = RegExp('%' + i, 'g');
-                    lang = lang.replace(expReg, values[i]);
-                }
-                return lang;
-            };
-            else getText2 = () => {};
-            try {
-                const Obj = {};
-                Obj.event = event 
-                Obj.api = api
-                Obj.models = models
-                Obj.Users = Users
-                Obj.Threads = Threads 
-              Obj.usersData = usersData;
-              Obj.threadsData = threadsData;
-                Obj.message = message;
-                Obj.Currencies = Currencies 
-                Obj.getText = getText2;
-                if (cmd) cmd.handleEvent(Obj);
-            } catch (error) {
-               
+  return function ({ event }) {
+    const { allowInbox } = global.config;
+    const { userBanned, threadBanned } = global.data;
+    const { commands, eventRegistered } = global.client;
+    const senderID = String(event.senderID);
+    const threadID = String(event.threadID);
+
+    if (userBanned.has(senderID) || threadBanned.has(threadID)) return;
+    if (allowInbox === false && senderID === threadID) return;
+
+    for (const eventReg of eventRegistered) {
+      const cmd = commands.get(eventReg);
+      if (!cmd || !cmd.handleEvent) continue;
+
+      var getText2;
+      if (cmd.languages && typeof cmd.languages == 'object') {
+        getText2 = (...values) => {
+          const lang = cmd.languages[global.config.language] || {};
+          var text = lang[values[0]] || '';
+          for (var i = values.length; i > 0; i--) {
+            text = text.replace(new RegExp('%' + i, 'g'), values[i]);
+          }
+          return text;
+        };
+      } else {
+        getText2 = () => {};
+      }
+
+      try {
+        const _origSend = api.sendMessage.bind(api);
+        const _wrappedApi = Object.assign(Object.create(api), {
+          sendMessage: async function (msg, tid, ...rest) {
+            if (humanTyping) {
+              const delay = humanTyping.calcDelay(msg);
+              if (delay > 0) await humanTyping.simulateTyping(api, tid || threadID, delay);
             }
-        }
-    };
+            return _origSend(msg, tid, ...rest);
+          }
+        });
+
+        const Obj = {
+          event,
+          api: _wrappedApi,
+          models,
+          Users,
+          Threads,
+          Currencies,
+          usersData,
+          threadsData,
+          message,
+          getText: getText2
+        };
+        cmd.handleEvent(Obj);
+      } catch (error) {
+        console.error('[handleCommandEvent] خطأ في تنفيذ الحدث:', cmd?.config?.name, error?.message || error);
+      }
+    }
+  };
 };

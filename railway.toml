@@ -2,17 +2,16 @@
 builder = "NIXPACKS"
 
 [build.env]
-NODE_VERSION = "20.x"
+NODE_VERSION = "20"
 
 [deploy]
 startCommand = "npm start"
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
+restartPolicyType = "ALWAYS"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
 
 [phases.install]
-# استخدم npm ci بدل npm install للتثبيت النظيف
-cmds = ["npm ci"]
+cmds = ["npm install --production=false"]
 
 [phases.build]
-# لو مافيش build steps فعلية، مجرد رسالة
 cmds = ["echo Build complete"]

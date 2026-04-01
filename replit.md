@@ -1,44 +1,75 @@
-# ZAO Facebook Messenger Bot
+# ZAO Bot — Facebook Messenger Bot
 
 ## Overview
-ZAO is a Facebook Messenger chatbot built in Node.js using the `@dongdev/fca-unofficial` FCA library. It supports modular commands and events, auto-login, SQLite database, and various automated features (auto-greet, auto-post, auto-bio, etc.).
+بوت ZAO الموحّد لـ Facebook Messenger مبني على Node.js يعمل كبوت متكامل.
+- **بوت واحد فقط**: ZAO (تم دمج جميع ميزات White/GoatBot داخله)
+- **نقطة دخول واحدة**: `Main.js` → يُشغّل `ZAO.js` مع watchdog وحماية كاملة
 
 ## Architecture
-- **Main.js** — Entry point: starts Express health-check server, spawns `ZAO.js` as child process with watchdog restart logic (up to 25 retries with exponential backoff)
-- **ZAO.js** — Core bot logic: loads config, connects to DB, logs into Facebook via FCA, loads command/event modules, sets up message handling
-- **includes/handle/** — Message/event handlers: `handleCommand.js`, `handleReply.js`, `handleEvent.js`, `handleCommandEvent.js`, `handleCreateDatabase.js`
-- **includes/login/** — Login helpers: `autoRelogin.js` handles session recovery
-- **includes/Emalogin/** — Email-based login fallback
-- **SCRIPTS/commands/** — Bot command modules (each exports config + run function)
-- **SCRIPTS/events/** — Bot event modules
+
+### نقطة الدخول — Main.js
+- يعتمد فقط على وحدات Node.js المدمجة (بدون أي npm dependency)
+- يُشغّل `ZAO.js` كـ subprocess
+- HTTP server على `PORT` (0.0.0.0) لـ health-check
+- Watchdog: إعادة تشغيل تلقائية (exponential backoff 3s → 2min, max 100 محاولة)
+- استعادة الكوكيز من `alt.json` → `ZAO-STATE.json` عند كل إعادة تشغيل
+- Self-ping كل 10 ثوانٍ لإبقاء العملية حية
+- `uncaughtException` + `unhandledRejection` لا تُوقف Main.js
+
+### ZAO Bot — ZAO.js
+- تسجيل دخول عبر `AppState` أو `Email/Password`
+- يحمّل الأوامر من `SCRIPTS/ZAO-CMDS/` والأحداث من `SCRIPTS/ZAO-EVTS/`
+- قاعدة بيانات: SQLite عبر Sequelize
+- PREFIX: `.` (نقطة)
+- ADMINBOT: `["61588122232768"]`
+
+## أنظمة الحماية المدمجة
+
+| النظام | الملف | التفاصيل |
+|--------|-------|----------|
+| HTTP Keep-Alive | Main.js | Self-ping كل 10 ثوانٍ |
+| Cookie Restore | Main.js | استعادة alt.json عند كل restart |
+| Watchdog | Main.js | إعادة تشغيل تلقائية مع backoff |
+| Session Ping | includes/keepAlive.js | Ping لـ Facebook كل 8-18 دقيقة عشوائي |
+| Cookie Save | includes/keepAlive.js | حفظ ZAO-STATE.json + alt.json كل ساعتين |
+| dtsg Refresh | includes/keepAlive.js | تجديد fb_dtsg كل 48 ساعة |
+| MQTT HealthCheck | includes/mqttHealthCheck.js | فحص كل 2-5 دقائق، backoff تصاعدي، max 5 محاولات |
+| Auto-Relogin | includes/login/autoRelogin.js | إعادة تسجيل الدخول عند انتهاء الجلسة |
+| MQTT Silence | ZAO.js | إعادة تشغيل المستمع إذا صمت > 20 دقيقة |
+| Memory Guard | ZAO.js | إعادة تشغيل إذا تجاوز heap 512 MB |
+| Graceful Exit | ZAO.js | حفظ الكوكيز عند SIGTERM/SIGINT |
+| Session Check | ZAO.js | فحص صحة الكوكيز كل 35 دقيقة |
+| GoatBot Alias | ZAO.js | global.GoatBot = alias لـ global.config للتوافق |
+
+## الأوامر المضافة
+
+| الأمر | الوصف | الصلاحية |
+|-------|--------|-----------|
+| `.divel` | معلومات المطور + إحصائيات البوت + حالة الحماية | الجميع |
+| `.cookieupdate` | حفظ الكوكيز الحية الآن | أدمن فقط |
+
+## ملفات الكوكيز
+
+| الملف | يُحفَظ متى |
+|-------|-----------|
+| `ZAO-STATE.json` | عند تسجيل الدخول + keepAlive (كل 2h) + SIGTERM |
+| `alt.json` | نفس ZAO-STATE.json — نسخة احتياطية للاسترداد |
 
 ## Configuration
-- **ZAO-SETTINGS.json** — Bot settings (prefix, admin IDs, feature toggles, command-specific config). API keys are NOT stored here — they are read from environment secrets.
-- **ZAO-STATE.json** — Facebook session cookies (appState)
-- **fca-config.json** — FCA library configuration (auto-login, MQTT, API server)
+- **ZAO-SETTINGS.json** — جميع إعدادات البوت
 
-## Environment Secrets (Required)
-- `FB_EMAIL` — Facebook login email
-- `FB_PASSWORD` — Facebook login password
-- `YOUTUBE_API_KEY` — YouTube Data API key
-- `WOLFRAM_API_KEY` — Wolfram Alpha API key
-- `SAUCENAO_API_KEY` — SauceNAO reverse image search API key
-- `OPENWEATHER_API_KEY` — OpenWeatherMap API key
-- `SOUNDCLOUD_API_KEY` — SoundCloud API key
-- `SIMSIMI_API_KEY` — SimSimi chatbot API key
+## Environment Variables
+- `PORT` — بورت HTTP server (Railway يضبطه تلقائياً، افتراضي: 3000)
+- `FB_EMAIL` / `FB_PASSWORD` — بيانات دخول Facebook (اختياري إذا وُجد ZAO-STATE.json)
 
-## Key Dependencies
-- `@dongdev/fca-unofficial` (local symlink from `fca-unofficial-main/`) — Facebook Chat API
-- `express` — Health-check server on port 3000
-- `sequelize` + `sqlite3` — Database ORM
-- `axios` — HTTP requests
-- `moment-timezone` — Time formatting
+## Railway
+- **railway.toml** موجود مع: `restartPolicyType = "ALWAYS"`, healthcheck `/health`
+- `npm start` → `node Main.js`
+- لا يحتاج تعديلات إضافية
 
-## Database
-- SQLite stored at `data.sqlite`
-- Models managed by Sequelize, auto-created on startup via `handleCreateDatabase.js`
-
-## Running
-- Workflow: `Start ZAO Bot` runs `node Main.js`
-- Express serves on port 3000 (health check `/ping` endpoint)
-- Bot requires valid Facebook cookies in `ZAO-STATE.json` (must include `c_user`, `xs` cookies)
+## تشغيل محلي
+```bash
+cd Zaogreatergreater-New-Blood
+npm install
+node Main.js
+```

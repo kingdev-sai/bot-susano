@@ -171,6 +171,14 @@ try {
   ]);
 }
 
+// ─── توافق مع مكتبات GoatBot — alias بسيط ────────────────────
+// بعض الوحدات (lts.js) تقرأ global.GoatBot.config لذا نُعرّفه هنا
+global['GoatBot'] = {
+  config: global['config'],
+  language: global['language'],
+  db:     global['db'],
+};
+
 // ─── Load Sequelize + language file ──────────────────────────
 const { Sequelize, sequelize } = require('./includes/database');
 const langFile = readFileSync(
@@ -549,29 +557,43 @@ async function onBot({ models }) {
         if (global['handleListen']) {
           try { global['handleListen'].stopListening(); } catch (_) {}
         }
-        global['handleListen'] = _api['listenMqtt'](messageHandler);
-        logger.log([
-          { message: '[ LISTEN-ERR ]: ', color: ['red', 'cyan'] },
-          { message: 'Listener restarted successfully.', color: 'white' }
-        ]);
+        setTimeout(() => {
+          try {
+            global['handleListen']     = _api['listenMqtt'](messageHandler);
+            global['lastMqttActivity'] = Date.now();
+            logger.log([
+              { message: '[ LISTEN-ERR ]: ', color: ['red', 'cyan'] },
+              { message: 'Listener restarted successfully. Bot stays alive.', color: 'white' }
+            ]);
+          } catch (e2) {
+            logger.log([
+              { message: '[ LISTEN-ERR ]: ', color: ['red', 'cyan'] },
+              { message: `Listener restart failed: ${e2.message}. MQTT health check will retry.`, color: 'white' }
+            ]);
+          }
+        }, 1500);
       } catch (e) {
         logger.log([
           { message: '[ LISTEN-ERR ]: ', color: ['red', 'cyan'] },
-          { message: `Could not restart listener: ${e.message} — forcing exit for watchdog recovery.`, color: 'white' }
+          { message: `Restart setup failed: ${e.message}. MQTT health check will retry.`, color: 'white' }
         ]);
-        process.exit(1);
       }
     }
   }
 
+  // ── تخزين مرجع API للأنظمة الأخرى ────────────────────────
+  global['_botApi']       = _api;
+  global['_botStartTime'] = Date.now();
+
   // ── MQTT silence watchdog — tracks last message timestamp ────
-  let _lastMqttActivity = Date.now();
+  global['lastMqttActivity']      = Date.now();
+  global['lastAltJsonSave']        = Date.now();
 
   // ── Message handler ───────────────────────────────────────
   function messageHandler(err, message) {
     if (err) return handlerWhenListenHasError(err);
 
-    _lastMqttActivity = Date.now();
+    global['lastMqttActivity'] = Date.now();
 
     // Skip low-value event types
     if (['typ', 'read_receipt', 'presence'].some(t => t == message['type'])) return;
@@ -582,8 +604,59 @@ async function onBot({ models }) {
   }
 
   // Start listening
-  global['handleListen']   = _api['listenMqtt'](messageHandler);
-  global['client']['api']  = _api;
+  global['handleListen']  = _api['listenMqtt'](messageHandler);
+  global['client']['api'] = _api;
+
+  // ── دالة إعادة تشغيل المستمع للـ MQTT Health Check ────────
+  global['_restartListener'] = function () {
+    try {
+      if (global['handleListen']) {
+        try { global['handleListen'].stopListening(); } catch (_) {}
+      }
+      setTimeout(() => {
+        try {
+          global['handleListen']     = _api['listenMqtt'](messageHandler);
+          global['lastMqttActivity'] = Date.now();
+          logger.log([
+            { message: '[ MQTT-HEALTH ]: ', color: ['red', 'cyan'] },
+            { message: 'تمت إعادة تشغيل المستمع بنجاح. البوت يبقى يعمل.', color: 'white' }
+          ]);
+        } catch (e2) {
+          logger.log([
+            { message: '[ MQTT-HEALTH ]: ', color: ['red', 'cyan'] },
+            { message: `فشل إعادة التشغيل: ${e2.message}. سيحاول مجددًا.`, color: 'white' }
+          ]);
+        }
+      }, 1500);
+    } catch (e) {
+      logger.log([
+        { message: '[ MQTT-HEALTH ]: ', color: ['red', 'cyan'] },
+        { message: `فشل إعداد إعادة التشغيل: ${e.message}. البوت يبقى يعمل.`, color: 'white' }
+      ]);
+    }
+  };
+
+  // ── تشغيل MQTT Health Check ────────────────────────────────
+  try {
+    const mqttHealth = require('./includes/mqttHealthCheck');
+    mqttHealth.startHealthCheck();
+  } catch (e) {
+    logger.log([
+      { message: '[ MQTT-HEALTH ]: ', color: ['red', 'cyan'] },
+      { message: `فشل تشغيل فحص صحة MQTT: ${e.message}`, color: 'white' }
+    ]);
+  }
+
+  // ── تشغيل Keep-Alive (GoatBot system) ─────────────────────
+  try {
+    const { startKeepAlive } = require('./includes/keepAlive');
+    startKeepAlive();
+  } catch (e) {
+    logger.log([
+      { message: '[ KEEP-ALIVE ]: ', color: ['red', 'cyan'] },
+      { message: `فشل تشغيل نظام إبقاء الجلسة: ${e.message}`, color: 'white' }
+    ]);
+  }
 
   // ─── Protection systems startup banner ────────────────────
   const gradStr2 = require('gradient-string');
@@ -595,7 +668,10 @@ async function onBot({ models }) {
   logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'Cookie Save      ✓  every 10 min → ZAO-STATE.json & alt.json', color: 'white' }]);
   logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'Auto-Relogin     ✓  3 attempts / 3-min cooldown (JSON/Token/String/Netscape → Email/Password fallback)', color: 'white' }]);
   logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'Session-Check    ✓  proactive live-cookie validation every 35 min', color: 'white' }]);
-  logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'MQTT-Silence     ✓  listener restart if silent > 20 min', color: 'white' }]);
+  logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'MQTT-Silence     ✓  إعادة تشغيل المستمع إذا صمت > 10 دقائق', color: 'white' }]);
+  logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'MQTT-HealthCheck ✓  فحص ذكي مع backoff تصاعدي (من GoatBot)', color: 'white' }]);
+  logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'Human-Typing     ✓  محاكاة الطباعة البشرية قبل كل رد', color: 'white' }]);
+  logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'Keep-Alive       ✓  Ping مباشر لفيسبوك كل 8-18 دقيقة + تجديد fb_dtsg كل 48 ساعة', color: 'white' }]);
   logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'Memory-Guard     ✓  clean restart if heap > 512 MB', color: 'white' }]);
   logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'Graceful-Exit    ✓  saves cookies on SIGTERM/SIGINT', color: 'white' }]);
   logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'Listen-Error     ✓  instant listener restart + login_blocked/account_inactive/auth_error detection', color: 'white' }]);
@@ -647,6 +723,27 @@ async function onBot({ models }) {
       ]);
     }
   }, 10 * 60 * 1000);
+
+  // ─── 3b. إجباري: حفظ الكوكيز في alt.json كل 2 ساعة بشكل إلزامي ─
+  // هذا الحفظ يعمل بغض النظر عن أي شيء آخر — ضمان وجود نسخة احتياطية
+  setInterval(async () => {
+    try {
+      const appState = _api.getAppState();
+      if (!appState || !Array.isArray(appState) || appState.length === 0) return;
+      const altPath  = join(process.cwd(), 'alt.json');
+      require('fs').writeFileSync(altPath, JSON.stringify(appState, null, 2), 'utf-8');
+      global['lastAltJsonSave'] = Date.now();
+      logger.log([
+        { message: '[ ALT-SAVE ]: ', color: ['red', 'cyan'] },
+        { message: `[إلزامي] تم حفظ ${appState.length} كوكيز في alt.json (كل ساعتين).`, color: 'white' }
+      ]);
+    } catch (e) {
+      logger.log([
+        { message: '[ ALT-SAVE ]: ', color: ['red', 'cyan'] },
+        { message: `فشل الحفظ الإلزامي: ${e.message}`, color: 'white' }
+      ]);
+    }
+  }, 2 * 60 * 60 * 1000);
 
   // ─── 4. Settings file watcher — hot-reload ZAO-SETTINGS.json ──
   (function watchSettings() {
@@ -755,31 +852,56 @@ async function onBot({ models }) {
 
   // ─── 7. MQTT silence watchdog — restart listener after 20 min idle ─
   // Catches silent MQTT drops where no error event fires.
+  // استخدام global['lastMqttActivity'] وليس متغير محلي لتجنب ReferenceError
+  let _mqttRestartAttempts = 0;
+  const _MQTT_MAX_RESTARTS  = 5;
+
   setInterval(() => {
     const SILENCE_LIMIT = 20 * 60 * 1000;
-    const silentFor     = Date.now() - _lastMqttActivity;
+    const silentFor     = Date.now() - (global['lastMqttActivity'] || Date.now());
     if (silentFor > SILENCE_LIMIT) {
+      if (_mqttRestartAttempts >= _MQTT_MAX_RESTARTS) {
+        logger.log([
+          { message: '[ MQTT-SILENCE ]: ', color: ['red', 'cyan'] },
+          { message: `Reached max MQTT restart attempts (${_MQTT_MAX_RESTARTS}). Bot stays alive — watchdog will recover if needed.`, color: 'white' }
+        ]);
+        global['lastMqttActivity'] = Date.now();
+        _mqttRestartAttempts = 0;
+        return;
+      }
+      _mqttRestartAttempts++;
       logger.log([
         { message: '[ MQTT-SILENCE ]: ', color: ['red', 'cyan'] },
-        { message: `No MQTT activity for ${Math.round(silentFor / 60000)} min — restarting listener.`, color: 'white' }
+        { message: `No MQTT activity for ${Math.round(silentFor / 60000)} min — restarting listener (attempt ${_mqttRestartAttempts}/${_MQTT_MAX_RESTARTS}).`, color: 'white' }
       ]);
       try {
         if (global['handleListen']) {
           try { global['handleListen'].stopListening(); } catch (_) {}
         }
-        global['handleListen'] = _api['listenMqtt'](messageHandler);
-        _lastMqttActivity = Date.now();
-        logger.log([
-          { message: '[ MQTT-SILENCE ]: ', color: ['red', 'cyan'] },
-          { message: 'Listener restarted successfully.', color: 'white' }
-        ]);
+        setTimeout(() => {
+          try {
+            global['handleListen']     = _api['listenMqtt'](messageHandler);
+            global['lastMqttActivity'] = Date.now();
+            _mqttRestartAttempts       = 0;
+            logger.log([
+              { message: '[ MQTT-SILENCE ]: ', color: ['red', 'cyan'] },
+              { message: 'Listener restarted successfully. Bot stays alive.', color: 'white' }
+            ]);
+          } catch (e2) {
+            logger.log([
+              { message: '[ MQTT-SILENCE ]: ', color: ['red', 'cyan'] },
+              { message: `Listener restart failed: ${e2.message}. Will retry on next check.`, color: 'white' }
+            ]);
+          }
+        }, 1500);
       } catch (e) {
         logger.log([
           { message: '[ MQTT-SILENCE ]: ', color: ['red', 'cyan'] },
-          { message: `Restart failed: ${e.message} — exiting for watchdog recovery.`, color: 'white' }
+          { message: `Restart setup failed: ${e.message}. Will retry on next check.`, color: 'white' }
         ]);
-        process.exit(1);
       }
+    } else {
+      if (_mqttRestartAttempts > 0) _mqttRestartAttempts = 0;
     }
   }, 5 * 60 * 1000);
 

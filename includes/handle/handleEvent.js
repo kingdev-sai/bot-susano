@@ -1,40 +1,52 @@
-module.exports = function ({api ,models, Users, Threads, Currencies, globalData, usersData, threadsData , message }) {
-    const logger = require("../../utils/log.js");
-        const moment = require("moment");
+module.exports = function ({ api, models, Users, Threads, Currencies, globalData, usersData, threadsData, message }) {
+  const logger = require("../../utils/log.js");
+  const moment = require("moment");
 
-    return function ({ event }) {
-        const timeStart = Date.now()
-        const time = moment.tz("Asia/Manila").format("HH:mm:ss L");
-        const { userBanned, threadBanned } = global.data;
-        const { events } = global.client;
-        const { allowInbox, DeveloperMode } = global.config;
-        var { senderID, threadID } = event;
-        senderID = String(senderID);
-        threadID = String(threadID);
-        if (userBanned.has(senderID)|| threadBanned.has(threadID) || allowInbox == ![] && senderID == threadID) return;
-        for (const [key, value] of events.entries()) {
-            if (!value.config?.eventType) continue;
-            if (value.config.eventType.indexOf(event.logMessageType) !== -1) {
-                const eventRun = events.get(key);
-                try {
-                    const Obj = {};
-                    Obj.api = api
-                    Obj.message = message;
-                    Obj.event = event
-                    Obj.models= models 
-                  Obj.usersData = usersData;
-                  Obj.threadsData = threadsData;
-                    Obj.Users= Users 
-                    Obj.Threads = Threads
-                    Obj.Currencies = Currencies 
-                    eventRun.run(Obj);
-                    if (DeveloperMode == !![]) 
-                        logger(global.getText('handleEvent', 'executeEvent', time, eventRun.config.name, threadID, Date.now() - timeStart), '[ Event ]');
-                } catch (error) {
-                    logger(global.getText('handleEvent', 'eventError', eventRun.config.name, JSON.stringify(error)), "error");
-                }
-            }
+  return function ({ event }) {
+    const timeStart = Date.now();
+    const time = moment.tz("Asia/Manila").format("HH:mm:ss L");
+    const { userBanned, threadBanned } = global.data;
+    const { events } = global.client;
+    const { allowInbox, DeveloperMode } = global.config;
+    const senderID = String(event.senderID || "");
+    const threadID = String(event.threadID || "");
+
+    if (userBanned.has(senderID) || threadBanned.has(threadID)) return;
+    if (allowInbox == false && senderID === threadID) return;
+
+    const eventType = event.logMessageType;
+    if (!eventType) return;
+
+    for (const [key, value] of events.entries()) {
+      if (!value.config?.eventType) continue;
+      if (!value.config.eventType.includes(eventType)) continue;
+
+      const eventRun = events.get(key);
+      try {
+        const Obj = {
+          api,
+          message,
+          event,
+          models,
+          usersData,
+          threadsData,
+          Users,
+          Threads,
+          Currencies
+        };
+        eventRun.run(Obj);
+        if (DeveloperMode == true) {
+          logger(
+            global.getText('handleEvent', 'executeEvent', time, eventRun.config.name, threadID, Date.now() - timeStart),
+            '[ Event ]'
+          );
         }
-        return;
-    };
-}
+      } catch (error) {
+        logger(
+          global.getText('handleEvent', 'eventError', eventRun?.config?.name, String(error?.message || error)),
+          "error"
+        );
+      }
+    }
+  };
+};
