@@ -192,10 +192,10 @@ The subagent has access to:
 - File operations (read, write, edit, glob, grep)
 - Bash commands
 - LSP diagnostics
+- Depending on specialization, additional tools like media generation or canvas tools may be available
 - Skills (loaded via `relevantSkills` parameter)
 
 The subagent does **NOT**:
 
 - Run or restart workflows
-- Check workflow/console logs
 - Preview/test the app (that's your job as main agent)

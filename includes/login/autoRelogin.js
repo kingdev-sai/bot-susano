@@ -1,4 +1,4 @@
-const login = require("@dongdev/fca-unofficial");
+const { login } = require("../fcaClient");
 const fs = require("fs-extra");
 const path = require("path");
 
@@ -45,7 +45,7 @@ function notifyAdmins(api, message) {
  * @param {object} api - Current FCA API instance (used to notify admins)
  * @returns {Promise<boolean>} true if re-login succeeded, false otherwise
  */
-module.exports = async function autoRelogin(api) {
+module.exports = async function autoRelogin(api, reason) {
   const now = Date.now();
 
   if (isAttempting) {
@@ -88,10 +88,11 @@ module.exports = async function autoRelogin(api) {
   lastAttempt  = now;
   retryCount++;
 
-  log("info", `Attempting re-login (attempt ${retryCount}/${MAX_RETRIES}) for: ${email}`);
+  const reasonMsg = reason ? ` | reason=${String(reason && (reason.message || reason.error || reason)).slice(0, 180)}` : "";
+  log("info", `Attempting re-login (attempt ${retryCount}/${MAX_RETRIES}) for: ${email}${reasonMsg}`);
   notifyAdmins(
     api,
-    `🔄 SESSION EXPIRED — Attempting auto re-login...\nAttempt ${retryCount}/${MAX_RETRIES}`
+    `🔄 SESSION EXPIRED — Attempting auto re-login...\nAttempt ${retryCount}/${MAX_RETRIES}${reasonMsg ? `\n${reasonMsg}` : ""}`
   );
 
   return new Promise(resolve => {

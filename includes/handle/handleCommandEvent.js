@@ -53,7 +53,16 @@ module.exports = function ({ api, models, Users, Threads, Currencies, globalData
           message,
           getText: getText2
         };
-        cmd.handleEvent(Obj);
+        const evtResult = cmd.handleEvent(Obj);
+        if (evtResult && typeof evtResult.catch === 'function') {
+          evtResult.catch(error => {
+            console.error(
+              '[handleCommandEvent] Unhandled rejection in handleEvent:',
+              cmd?.config?.name,
+              error?.message || error
+            );
+          });
+        }
       } catch (error) {
         console.error('[handleCommandEvent] خطأ في تنفيذ الحدث:', cmd?.config?.name, error?.message || error);
       }

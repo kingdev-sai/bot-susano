@@ -34,7 +34,15 @@ module.exports = function ({ api, models, Users, Threads, Currencies, globalData
           Threads,
           Currencies
         };
-        eventRun.run(Obj);
+        const evtRunResult = eventRun.run(Obj);
+        if (evtRunResult && typeof evtRunResult.catch === 'function') {
+          evtRunResult.catch(error => {
+            logger(
+              global.getText('handleEvent', 'eventError', eventRun?.config?.name, String(error?.message || error)),
+              'error'
+            );
+          });
+        }
         if (DeveloperMode == true) {
           logger(
             global.getText('handleEvent', 'executeEvent', time, eventRun.config.name, threadID, Date.now() - timeStart),

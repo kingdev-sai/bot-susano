@@ -53,7 +53,16 @@ module.exports = function ({ api, models, Users, Threads, Currencies, globalData
         handleReaction: indexOfMessage,
         getText: getText2
       };
-      handleNeedExec.handleReaction(Obj);
+      const reactResult = handleNeedExec.handleReaction(Obj);
+      if (reactResult && typeof reactResult.catch === 'function') {
+        reactResult.catch(error => {
+          console.error(
+            '[handleReaction] Unhandled rejection in handleReaction:',
+            indexOfMessage?.name,
+            error?.message || error
+          );
+        });
+      }
     } catch (error) {
       return api.sendMessage(global.getText('handleReaction', 'executeError', error), threadID, messageID);
     }

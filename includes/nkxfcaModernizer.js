@@ -1,0 +1,344 @@
+"use strict";
+
+const fs = require("fs-extra");
+const path = require("path");
+
+function createLogger() {
+  return function log(message, color = "white") {
+    try {
+      if (global.loggeryuki) {
+        global.loggeryuki.log([
+          { message: "[ NKX ]: ", color: ["red", "cyan"] },
+          { message, color }
+        ]);
+        return;
+      }
+    } catch (_) {}
+    console.log("[NKX]", message);
+  };
+}
+
+function getCfg() {
+  const cfg = global.config?.nkxModern || {};
+  return {
+    enabled: cfg.enabled !== false,
+    enableHealthBroadcast: cfg.enableHealthBroadcast !== false,
+    healthBroadcastMinutes: cfg.healthBroadcastMinutes || 15,
+    enableWarmup: cfg.enableWarmup !== false,
+    warmupMinutes: cfg.warmupMinutes || 20,
+    enableCircuitBreaker: cfg.enableCircuitBreaker !== false,
+    enableE2EE: cfg.enableE2EE === true,
+    postSafeGuard: cfg.postSafeGuard !== false,
+    enableTypingWrap: cfg.enableTypingWrap !== false,
+    maxSendConcurrency: cfg.maxSendConcurrency || 4,
+    sendWindowMs: cfg.sendWindowMs || 60000,
+    sendWindowLimit: cfg.sendWindowLimit || 45,
+    sqliteCacheFile: cfg.sqliteCacheFile || "cache/nkx-cache.json"
+  };
+}
+
+function toCallbackStyle(fn, cb) {
+  if (typeof cb !== "function") return fn;
+  Promise.resolve(fn).then((res) => cb(null, res)).catch((err) => cb(err));
+}
+
+module.exports = function modernizeNkxApi(api) {
+  if (!api || api.__nkxModernized) return api;
+  const log = createLogger();
+  const cfg = getCfg();
+  if (!cfg.enabled) return api;
+
+  const timers = [];
+  const safeIntervals = {
+    setInterval(fn, ms) {
+      const t = setInterval(fn, ms);
+      timers.push(t);
+      return t;
+    },
+    setTimeout(fn, ms) {
+      const t = setTimeout(fn, ms);
+      timers.push(t);
+      return t;
+    }
+  };
+
+  const rateState = {
+    starts: [],
+    active: 0,
+    queue: []
+  };
+
+  const cache = {
+    threads: new Map(),
+    users: new Map(),
+    dirty: false
+  };
+
+  const cachePath = path.join(process.cwd(), cfg.sqliteCacheFile);
+  try {
+    if (fs.existsSync(cachePath)) {
+      const data = fs.readJsonSync(cachePath);
+      for (const [k, v] of Object.entries(data.threads || {})) cache.threads.set(k, v);
+      for (const [k, v] of Object.entries(data.users || {})) cache.users.set(k, v);
+    }
+  } catch (e) {
+    log("Cache restore skipped: " + (e.message || e), "yellow");
+  }
+
+  async function flushCache() {
+    if (!cache.dirty) return;
+    try {
+      await fs.ensureDir(path.dirname(cachePath));
+      await fs.writeJson(
+        cachePath,
+        {
+          threads: Object.fromEntries(cache.threads),
+          users: Object.fromEntries(cache.users)
+        },
+        { spaces: 2 }
+      );
+      cache.dirty = false;
+    } catch (e) {
+      log("Cache flush failed: " + (e.message || e), "yellow");
+    }
+  }
+
+  safeIntervals.setInterval(flushCache, 120000);
+
+  function classifyAuthError(errLike) {
+    const str = String(
+      (errLike && (errLike.error || errLike.message || errLike.reason)) || errLike || ""
+    ).toLowerCase();
+    return [
+      "checkpoint",
+      "login",
+      "session expired",
+      "not-authorized",
+      "auth",
+      "cookie",
+      "invalid token",
+      "account"
+    ].some((k) => str.includes(k));
+  }
+
+  async function enqueueSend(run) {
+    return new Promise((resolve, reject) => {
+      rateState.queue.push({ run, resolve, reject });
+      pump();
+    });
+  }
+
+  function trimWindow(now) {
+    const minTs = now - cfg.sendWindowMs;
+    while (rateState.starts.length && rateState.starts[0] < minTs) rateState.starts.shift();
+  }
+
+  function jitterDelay() {
+    return Math.floor(Math.random() * 300) + 80;
+  }
+
+  function pump() {
+    if (!rateState.queue.length) return;
+    if (rateState.active >= cfg.maxSendConcurrency) return;
+    const now = Date.now();
+    trimWindow(now);
+    if (rateState.starts.length >= cfg.sendWindowLimit) {
+      safeIntervals.setTimeout(pump, 400 + jitterDelay());
+      return;
+    }
+
+    const item = rateState.queue.shift();
+    rateState.active++;
+    rateState.starts.push(now);
+
+    Promise.resolve()
+      .then(item.run)
+      .then(item.resolve)
+      .catch(item.reject)
+      .finally(() => {
+        rateState.active--;
+        safeIntervals.setTimeout(pump, jitterDelay());
+      });
+  }
+
+  const typing = (() => {
+    try {
+      return require("./humanTyping");
+    } catch (_) {
+      return null;
+    }
+  })();
+
+  const original = {
+    sendMessage: typeof api.sendMessage === "function" ? api.sendMessage.bind(api) : null,
+    listenMqtt: typeof api.listenMqtt === "function" ? api.listenMqtt.bind(api) : null,
+    getThreadInfo: typeof api.getThreadInfo === "function" ? api.getThreadInfo.bind(api) : null,
+    getUserInfo: typeof api.getUserInfo === "function" ? api.getUserInfo.bind(api) : null
+  };
+
+  if (original.sendMessage) {
+    api.sendMessage = function patchedSendMessage(form, threadID, callback, replyToMessage) {
+      const run = async () => {
+        if (cfg.enableTypingWrap && typing) {
+          const d = typing.calcDelay(form);
+          if (d > 0) await typing.simulateTyping(api, threadID, d);
+        }
+        return new Promise((resolve, reject) => {
+          original.sendMessage(form, threadID, (err, info) => {
+            if (err && cfg.postSafeGuard && classifyAuthError(err) && typeof global._triggerAutoRelogin === "function") {
+              global._triggerAutoRelogin(err);
+            }
+            if (err) return reject(err);
+            resolve(info);
+          }, replyToMessage);
+        });
+      };
+
+      const p = enqueueSend(run);
+      if (typeof callback === "function") {
+        p.then((info) => callback(null, info)).catch((err) => callback(err));
+        return;
+      }
+      return p;
+    };
+  }
+
+  if (original.getThreadInfo) {
+    api.getThreadInfo = function patchedGetThreadInfo(threadID, callback) {
+      const key = String(threadID);
+      const fromCache = cache.threads.get(key);
+      if (fromCache) return toCallbackStyle(Promise.resolve(fromCache), callback);
+      const p = Promise.resolve(original.getThreadInfo(threadID)).then((info) => {
+        if (info) {
+          cache.threads.set(key, info);
+          cache.dirty = true;
+        }
+        return info;
+      });
+      return toCallbackStyle(p, callback);
+    };
+  }
+
+  if (original.getUserInfo) {
+    api.getUserInfo = function patchedGetUserInfo(userID, callback) {
+      const key = String(userID);
+      const fromCache = cache.users.get(key);
+      if (fromCache) return toCallbackStyle(Promise.resolve({ [key]: fromCache }), callback);
+      const p = Promise.resolve(original.getUserInfo(userID)).then((info) => {
+        const data = info && info[key] ? info[key] : null;
+        if (data) {
+          cache.users.set(key, data);
+          cache.dirty = true;
+        }
+        return info;
+      });
+      return toCallbackStyle(p, callback);
+    };
+  }
+
+  if (original.listenMqtt) {
+    let attempts = 0;
+    api.listenMqtt = function patchedListenMqtt(handler) {
+      const wrapped = (err, event) => {
+        if (!err) {
+          attempts = 0;
+          return handler(err, event);
+        }
+
+        const authErr = classifyAuthError(err);
+        if (authErr && typeof global._triggerAutoRelogin === "function") {
+          global._triggerAutoRelogin(err);
+        }
+
+        if (!authErr && typeof global._restartListener === "function") {
+          attempts++;
+          const backoff = Math.min(45000, (2 ** Math.min(attempts, 6)) * 500 + Math.floor(Math.random() * 1000));
+          log(`MQTT error detected, scheduling reconnect in ${Math.round(backoff / 1000)}s`, "yellow");
+          safeIntervals.setTimeout(() => {
+            try {
+              global._restartListener();
+            } catch (_) {}
+          }, backoff);
+        }
+
+        return handler(err, event);
+      };
+      return original.listenMqtt(wrapped);
+    };
+  }
+
+  if (cfg.enableCircuitBreaker) {
+    try {
+      const { globalAntiSuspension } = require("@neoaz07/nkxfca/src/utils/antiSuspension");
+      global.nkx = global.nkx || {};
+      global.nkx.tripCircuit = (reason, ms) => globalAntiSuspension.tripCircuitBreaker(reason || "manual", ms || 30 * 60 * 1000);
+      global.nkx.resetCircuit = () => globalAntiSuspension.resetCircuitBreaker();
+      global.nkx.getCircuit = () => globalAntiSuspension.getConfig();
+      log("Circuit breaker controls attached.", "green");
+    } catch (e) {
+      log("Circuit breaker hooks unavailable: " + (e.message || e), "yellow");
+    }
+  }
+
+  if (cfg.enableWarmup) {
+    try {
+      const { globalAntiSuspension } = require("@neoaz07/nkxfca/src/utils/antiSuspension");
+      globalAntiSuspension.enableWarmup();
+      safeIntervals.setTimeout(() => {
+        try {
+          globalAntiSuspension.disableWarmup();
+          log("Warmup mode ended.", "green");
+        } catch (_) {}
+      }, cfg.warmupMinutes * 60 * 1000);
+      log(`Warmup mode enabled for ${cfg.warmupMinutes} minutes.`, "green");
+    } catch (e) {
+      log("Warmup hook unavailable: " + (e.message || e), "yellow");
+    }
+  }
+
+  if (cfg.enableE2EE && api.e2ee && typeof api.e2ee.enable === "function") {
+    try {
+      api.e2ee.enable();
+      log("E2EE enabled globally for DM flows.", "green");
+    } catch (e) {
+      log("E2EE enable failed: " + (e.message || e), "yellow");
+    }
+  }
+
+  if (cfg.enableHealthBroadcast && typeof api.getHealthStatus === "function") {
+    safeIntervals.setInterval(() => {
+      try {
+        const health = api.getHealthStatus();
+        global.nkx = global.nkx || {};
+        global.nkx.health = health;
+        const mqttHealthy = health?.mqtt?.isConnected ?? health?.mqttConnected;
+        log(
+          `Health mqtt=${String(mqttHealthy)} queue=${rateState.queue.length} active=${rateState.active}`,
+          "white"
+        );
+      } catch (_) {}
+    }, cfg.healthBroadcastMinutes * 60 * 1000);
+  }
+
+  if (typeof api.refreshFb_dtsg === "function") {
+    safeIntervals.setInterval(async () => {
+      try {
+        await api.refreshFb_dtsg();
+      } catch (_) {}
+    }, (45 + Math.floor(Math.random() * 30)) * 60 * 1000);
+  }
+
+  api.__nkxModernized = true;
+  api.__nkxModernizerStop = async function stopNkxModernizer() {
+    for (const t of timers) {
+      try {
+        clearInterval(t);
+        clearTimeout(t);
+      } catch (_) {}
+    }
+    await flushCache();
+  };
+
+  log("NKX modernizer enabled.", "green");
+  return api;
+};

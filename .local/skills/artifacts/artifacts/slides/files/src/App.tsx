@@ -40,13 +40,25 @@ function SlideEditor() {
       }
     };
 
+    // HTML spec "interactive content" — clicks on these elements (or their
+    // descendants) should be handled by the element itself, not advance.
+    const INTERACTIVE =
+      "a,button,video,audio,input,select,textarea,details,summary,iframe," +
+      '[role="button"],[contenteditable="true"]';
+
     const onClick = (event: MouseEvent) => {
-      if (navigationDisabledRef.current) return;
       if (event.button !== 0 || event.metaKey || event.ctrlKey) return;
-      const fraction = event.clientX / window.innerWidth;
-      if (fraction < 0.4 && currentIndex > 0) {
-        navigate(`/slide${slides[currentIndex - 1].position}`);
-      } else if (fraction >= 0.4 && currentIndex < slides.length - 1) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.(INTERACTIVE)) return;
+
+      if (navigationDisabledRef.current) {
+        // In the workspace the parent presenter owns navigation, so
+        // notify it via postMessage instead of navigating locally.
+        window.parent.postMessage({ type: "advanceSlide" }, "*");
+        return;
+      }
+
+      if (currentIndex < slides.length - 1) {
         navigate(`/slide${slides[currentIndex + 1].position}`);
       }
     };
@@ -60,7 +72,7 @@ function SlideEditor() {
   }, [currentIndex, navigate]);
 
   return (
-    <div className="cursor-default select-none">
+    <div className="select-none">
       {slides.map((slide, index) => (
         <div
           key={slide.id}

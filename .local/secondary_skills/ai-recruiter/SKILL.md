@@ -23,7 +23,7 @@ Help source and evaluate candidates for open roles. Analyze job descriptions, bu
 
 ## When NOT to Use
 
-- Sales prospecting (use find-customers skill)
+- Sales prospecting (use ai-sdr skill)
 - General market research (use deep-research skill)
 - Writing job-related content (use content-machine skill)
 

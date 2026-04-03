@@ -89,6 +89,25 @@ Define these once, apply them everywhere. A video with a coherent motion system 
 Videos should be composed for **16:9 aspect ratio**. Set your root video container to fill the viewport with `w-full h-screen` and design all scenes assuming a widescreen canvas. Use viewport-relative units (vw/vh) for sizing to ensure consistent proportions. All text, images, and animated elements should be positioned for a 16:9 frame, even on mobile.
 </resolution>
 
+<critical_rules>
+**Asset paths — this breaks every video if you get it wrong:**
+
+When referencing files in `public/` (images, videos) from scene components, NEVER use bare absolute paths like `src="/videos/hero.mp4"` or `src="/images/engine.png"`. The app is served at a subpath (e.g., `/ferrari-video/`), so bare paths will 404. Always use `import.meta.env.BASE_URL`:
+
+- **Correct:** `` src={`${import.meta.env.BASE_URL}videos/hero.mp4`} `` or `` src={`${import.meta.env.BASE_URL}images/engine.png`} ``
+- **Wrong:** `src="/videos/hero.mp4"` or `src="/images/engine.png"`
+
+This applies to ALL `<video>`, `<img>`, and `backgroundImage` references to public assets. Also applies to CSS `url()` in inline styles.
+
+When generating video clips or images via tools, always use the exact file path and extension returned by the generation tool in your `src` attributes. Do not assume or change the file extension — if the tool returns `.webm`, use `.webm`, not `.mp4`.
+
+**AnimatePresence mode:** Use `mode="popLayout"` or `mode="sync"`. **Never use `mode="wait"`** — it causes blank frames between scenes.
+
+**Scene files:** Place scenes in `src/components/video/video_scenes/` (e.g., `Scene1.tsx` through `Scene5.tsx`). Export as named exports matching the filename.
+
+**Do not modify `src/lib/video/hooks.ts`** — the recording/export pipeline depends on its exact implementation.
+</critical_rules>
+
 <slideshow_vs_motion_graphics>
 This is the single most important section. If you ignore everything else, read this.
 
@@ -429,6 +448,7 @@ Think: "Would this impress a creative director at a top agency?" If not, push fu
 - As full scenes: generated video clip with kinetic typography on top for hero moments
 - Keep clips short (4s is ideal for loops), composite with your animated elements, match the visual style
 - For hero moments, request `high_quality: true` for better visual fidelity -- works best for key visual moments and scene backgrounds
+
 </visual_content>
 
 <video_structure>
@@ -485,10 +505,7 @@ The `useVideoPlayer` hook automatically resets `currentScene` to 0 after the las
 - User may attach assets (images, logos, etc.) in their request. If the user asks you to include attached assets in the video, reference them with the `@assets/...` import syntax:
   - If the user attached asset is at `attached_assets/logo.png`, import it as `import logoPng from "@assets/logo.png";` and use it as `<img src={logoPng} />`
   - This works for any file in `attached_assets/` -- images, SVGs, videos, etc.
-- Static assets you create go in `public/` -- but do NOT use absolute paths like `/logo.png` to reference them. Vite's base path may not be `/`, so absolute paths will break. Instead:
-  - Use `import.meta.env.BASE_URL` to build the path: `` `${import.meta.env.BASE_URL}logo.png` ``
-  - Or import the asset directly: `import logoPng from "/logo.png";` (Vite resolves this at build time)
-  - Example: `public/images/hero.jpg` → `` `${import.meta.env.BASE_URL}images/hero.jpg` ``
+- Static assets you create go in `public/`. Reference them using `import.meta.env.BASE_URL` — see `<critical_rules>` at the top of this file for the exact pattern. Bare paths like `"/images/hero.jpg"` will 404.
 - Do NOT use `attached_assets/` as a URL path (e.g., `src="/attached_assets/logo.png"`) -- it is not served as a static directory. Always use the `@assets/...` import syntax instead.
 - **Do NOT use raw filesystem paths as image sources** (e.g., `src="/src/assets/images/bottle.png"`) -- Vite cannot serve `/src/...` paths at runtime. Always `import` the asset as a module (`import img from "@/assets/image.png"`) and use the imported variable as `src`.
 </technical_reference>
@@ -727,6 +744,7 @@ You CANNOT modify: Backend API endpoints, server-side code, database schemas.
 - **After building or editing the video**, run `bash scripts/validate-recording.sh` to verify the recording lifecycle is wired up. If it fails, fix the issues it reports before considering the build complete.
 
 **Image reminder:** When generating AI images overlaid on animated scenes, always use `remove_background: true`. Logos, characters, product shots -- all should have transparent backgrounds. Always include "no text, no words, no letters" in image generation prompts -- AI-generated text looks bad.
+
 </scope>
 
 <continuous_motion>
@@ -741,13 +759,20 @@ When the video concept involves shapes, icons, diagrams, logos, or any linework,
 
 ## After finishing your initial video build
 
-**Before delegating finalization**, run `bash scripts/validate-recording.sh` to verify the recording lifecycle is wired up. If it fails, fix the issues it reports before continuing.
+This section is for YOU, the design subagent. You are responsible for validation and finalization before returning to the main agent.
 
-After building a new video from scratch, delegate to a subagent to verify frame containment and loop integrity:
+1. **Validate recording lifecycle**: Run `bash scripts/validate-recording.sh`. If it fails, fix the issues it reports.
 
-- `task`: "Finalize video polish -- verify all content fits within the 16:9 frame without cutoff, remove any responsive breakpoints, and confirm the loop is clean. Follow the instructions in .local/skills/video-js/references/finalize_playback.md exactly."
-- `relevant_files`: [".local/skills/video-js/references/finalize_playback.md"]
-- `specialization`: "SMALL_TASK"
+2. **Verify frame containment and loop integrity yourself** (do not delegate -- subagents cannot spawn nested subagents). Walk through each scene file and check:
+   - Root container has `overflow-hidden` and `w-full h-screen`
+   - All layout-critical dimensions use viewport-relative units (`vw`, `vh`, `%`), not hardcoded pixels
+   - Images and video clips use `object-cover` or `object-contain` to prevent stretch/overflow
+   - Every scene's root `motion.div` has `initial`, `animate`, and `exit` props
+   - Every scene inside `AnimatePresence` has a unique `key` prop
+   - No `useState` flags or conditions that could block scene advancement
+   - See `.local/skills/video-js/references/finalize_playback.md` for the full checklist
 
-After the subagent completes, restart the workflow so the user sees the final result.
+3. **Verify asset paths**: Confirm that every `src=` attribute referencing a file in `public/` uses `import.meta.env.BASE_URL` and the correct file extension matching the actual file on disk — see `<critical_rules>` at the top of this file.
+
+After completing all checks, return to the main agent. The main agent will restart the workflow.
 </completing_your_run>

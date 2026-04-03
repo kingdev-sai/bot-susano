@@ -38,6 +38,9 @@ initial_open_files:
   - app/_layout.tsx
   - app/(tabs)/_layout.tsx
   - app/(tabs)/index.tsx
+  - /lib/api-spec/openapi.yaml
+  - /artifacts/api-server/src/index.ts
+  - /artifacts/api-server/package.json
 
 additional_skills:
   - media-generation

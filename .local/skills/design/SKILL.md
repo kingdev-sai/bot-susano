@@ -210,14 +210,14 @@ grep "^export " lib/api-client-react/src/generated/*.ts | grep -E "function use|
 ## Subagent Capabilities
 
 Can do:
-- File operations (read, write, edit, glob, grep)
-- Bash commands and package management
-- LSP diagnostics
-- Image generation/Video generation/stock image search
-- Web search and web fetch
+- File operations for reading and editing project files
+- Package management when dependencies need to be installed
+- Image generation/video generation/stock image search
+- Web search and web fetch when enabled
+- Canvas tools when operating in mockup sandbox or other canvas-enabled design flows
 
 Cannot do (your job as main agent):
 - Run or restart workflows
-- Check workflow/console logs
 - Preview or test the app
 - Spawn nested subagents
+- Check workflow/console logs

@@ -7,7 +7,7 @@ module.exports = {
     version:         "1.0",
     author:          "DJAMEL",
     cooldowns:       10,
-    hasPermssion:    3,
+    hasPermssion:    2,
     description:     "حفظ الكوكيز الحية الآن في ZAO-STATE.json و alt.json",
     commandCategory: "admin",
     guide:           "  {pn}",

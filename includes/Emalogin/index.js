@@ -1,7 +1,7 @@
 "use strict";
 const { writeFileSync } = require("fs");
 const { join } = require("path");
-const login = require("@dongdev/fca-unofficial");
+const { loginAsync } = require("../fcaClient");
 const parseAppState = require("../login/parseAppState");
 
 /**
@@ -24,6 +24,19 @@ module.exports = async function ({ FCAOption = {}, email, password } = {}) {
   );
 
   const userAgent = FCAOption.userAgent || global.config?.FCAOption?.userAgent;
+  const nkxDefaults = {
+    autoReconnect: true,
+    listenEvents: true,
+    autoMarkRead: true,
+    simulateTyping: true,
+    randomUserAgent: false,
+    persona: "desktop",
+    maxConcurrentRequests: 5,
+    maxRequestsPerMinute: 50,
+    requestCooldownMs: 60000,
+    errorCacheTtlMs: 300000
+  };
+  const loginOptions = Object.assign({}, nkxDefaults, global.config?.FCAOption || {}, FCAOption || {});
 
   // ── Step 1: Parse AppState (advisory validation — never blocks FCA) ──
   const parsed = await parseAppState(appStatePath, userAgent);
@@ -38,7 +51,7 @@ module.exports = async function ({ FCAOption = {}, email, password } = {}) {
     }
 
     try {
-      const api = await login({ appState }, FCAOption);
+      const api = await loginAsync({ appState }, loginOptions);
 
       // Verify FCA actually returned a working userID
       const uid = api && api.getCurrentUserID ? api.getCurrentUserID() : null;
@@ -81,7 +94,7 @@ module.exports = async function ({ FCAOption = {}, email, password } = {}) {
   console.log(`[ Login ]: Attempting credentials login for ${_email}...`);
 
   try {
-    const api = await login({ email: _email, password: _password }, FCAOption);
+    const api = await loginAsync({ email: _email, password: _password }, loginOptions);
 
     const uid = api && api.getCurrentUserID ? api.getCurrentUserID() : null;
     if (!uid || uid === "0") {

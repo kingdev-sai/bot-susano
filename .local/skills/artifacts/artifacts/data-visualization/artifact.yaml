@@ -37,3 +37,11 @@ service_configs:
 initial_open_files:
   - src/App.tsx
   - src/index.css
+  - /lib/api-spec/openapi.yaml
+  - /lib/db/src/index.ts
+  - /lib/db/src/schema/index.ts
+  - /artifacts/api-server/src/index.ts
+  - /artifacts/api-server/package.json
+
+additional_skills:
+  - database

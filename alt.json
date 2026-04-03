@@ -5,11 +5,11 @@
     "domain": "facebook.com",
     "path": "/",
     "hostOnly": false,
-    "creation": "2026-04-01T16:47:18.867Z",
-    "lastAccessed": "2026-04-01T16:47:25.768Z",
+    "creation": "2026-04-03T13:05:58.565Z",
+    "lastAccessed": "2026-04-03T13:06:04.405Z",
     "secure": false,
     "httpOnly": false,
-    "expires": "Infinity"
+    "expires": "2027-04-03T13:06:02.000Z"
   },
   {
     "key": "datr",
@@ -17,46 +17,22 @@
     "domain": "facebook.com",
     "path": "/",
     "hostOnly": false,
-    "creation": "2026-04-01T16:47:18.873Z",
-    "lastAccessed": "2026-04-01T16:47:25.768Z",
+    "creation": "2026-04-03T13:05:58.571Z",
+    "lastAccessed": "2026-04-03T13:06:04.405Z",
     "secure": false,
     "httpOnly": false,
-    "expires": "Infinity"
-  },
-  {
-    "key": "c_user",
-    "value": "61587085904651",
-    "domain": "facebook.com",
-    "path": "/",
-    "hostOnly": false,
-    "creation": "2026-04-01T16:47:18.874Z",
-    "lastAccessed": "2026-04-01T16:47:25.768Z",
-    "secure": false,
-    "httpOnly": false,
-    "expires": "Infinity"
+    "expires": "2027-04-03T13:06:02.000Z"
   },
   {
     "key": "fr",
-    "value": "18KE5HMQ6uFQkw13l.AWdfE2I7_yuQ2Fvks7u8yilBjy5YosdHz1uGI2oqaaiSHgWMRco.BpzUbU..AAA.0.0.BpzUwW.AWfigAvmxvxctMz2sFWNesWHIfM",
+    "value": "18KE5HMQ6uFQkw13l.AWe1aUBAd87JkKCIuXJF2gDD-SGxQMjcCwweNqDpzrlQq0vSK0U.BpzUbU..AAA.0.0.Bpz7s6.AWcpTRPOpYEvqUeUaBI_WaODKCM",
     "domain": "facebook.com",
     "path": "/",
     "hostOnly": false,
-    "creation": "2026-04-01T16:47:18.874Z",
-    "lastAccessed": "2026-04-01T16:47:25.768Z",
+    "creation": "2026-04-03T13:05:58.572Z",
+    "lastAccessed": "2026-04-03T13:06:04.405Z",
     "secure": true,
     "httpOnly": true,
-    "expires": "2026-06-30T16:47:18.000Z"
-  },
-  {
-    "key": "xs",
-    "value": "7%3AfYexwR5ZyopOOA%3A2%3A1775058512%3A-1%3A-1%3A%3AAcwX48JinoUKekTGK34QApQ0nN5w5mvgx4evA_gkLA",
-    "domain": "facebook.com",
-    "path": "/",
-    "hostOnly": false,
-    "creation": "2026-04-01T16:47:18.875Z",
-    "lastAccessed": "2026-04-01T16:47:25.768Z",
-    "secure": false,
-    "httpOnly": false,
-    "expires": "Infinity"
+    "expires": "2026-07-02T13:06:02.000Z"
   }
 ]
