@@ -32,7 +32,7 @@
     "reactUnsend": {
         "enable": true,
         "onlyAdmin": true,
-        "emojis": ["😡", "🤬"],
+        "emojis": ["😡", "😠"],
         "_note": "React to any bot message with these emojis to unsend it. onlyAdmin=true means only ADMINBOT IDs can trigger it."
     },
 
