@@ -1,13 +1,19 @@
 [build]
 builder = "NIXPACKS"
+
 [build.env]
 NODE_VERSION = "20"
+NODE_ENV = "production"
+
 [deploy]
-startCommand = "npm start"
+startCommand = "node Main.js"
 restartPolicyType = "ALWAYS"
-healthcheckPath = "/health"
-healthcheckTimeout = 30
+restartPolicyMaxRetries = 10
+healthcheckPath = "/api/status"
+healthcheckTimeout = 60
+
 [phases.install]
 cmds = ["npm install --production=false"]
+
 [phases.build]
 cmds = ["echo Build complete"]
