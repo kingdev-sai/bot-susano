@@ -1,14 +1,9 @@
 /**
- * keepAlive.js — مقتبس من GoatBot V2 ومُكيّف لـ ZAO
- * يرسل ping لفيسبوك مباشرةً عبر الكوكيز لإبقاء الجلسة حية
- * ويحدّث fb_dtsg كل 24 ساعة لمنع انتهاء صلاحية الرمز
- *
- * تحسينات v2:
- *  - Ping أكثر تكراراً: كل 5-10 دقائق (بدلاً من 8-18)
- *  - حفظ كوكيز كل 30 دقيقة (بدلاً من كل ساعتين)
- *  - تجديد fb_dtsg كل 24 ساعة (بدلاً من 48)
- *  - محاولة ثانية عبر www.facebook.com إذا فشل mbasic
- *  - حفظ تلقائي بعد كل ping ناجح يكشف تغيير في الكوكيز
+ * keepAlive.js — Session maintenance for ZAO
+ * - Pings Facebook every 5-10 minutes via rotating endpoints
+ * - Saves cookies every 30 minutes
+ * - Refreshes fb_dtsg every 24 hours
+ * - Uses realistic browser headers and diverse endpoints for stealth
  */
 
 const axios = require('axios');
@@ -44,31 +39,106 @@ function getCookieStr(api) {
   return appState.map(c => `${c.key}=${c.value}`).join('; ');
 }
 
+const MODERN_USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+];
+
 function getUserAgent() {
-  if (global.config?.FCAOption?.userAgent) return global.config.FCAOption.userAgent;
-  const desktopAgents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0'
-  ];
-  return desktopAgents[Math.floor(Math.random() * desktopAgents.length)];
+  if (global.config?.FCAOption?.userAgent && !global.config?.stealthMode?.rotateUserAgentOnReconnect) {
+    return global.config.FCAOption.userAgent;
+  }
+  return MODERN_USER_AGENTS[Math.floor(Math.random() * MODERN_USER_AGENTS.length)];
 }
 
-async function httpGet(url, cookieStr, userAgent) {
+const PING_ENDPOINTS = [
+  {
+    url: 'https://mbasic.facebook.com/',
+    label: 'mbasic',
+    referer: null
+  },
+  {
+    url: 'https://mbasic.facebook.com/home.php',
+    label: 'mbasic-home',
+    referer: 'https://mbasic.facebook.com/'
+  },
+  {
+    url: 'https://www.facebook.com/home.php',
+    label: 'www-home',
+    referer: 'https://www.facebook.com/'
+  },
+  {
+    url: 'https://www.facebook.com/messages/',
+    label: 'www-messages',
+    referer: 'https://www.facebook.com/home.php'
+  },
+  {
+    url: 'https://www.facebook.com/notifications',
+    label: 'www-notifs',
+    referer: 'https://www.facebook.com/'
+  }
+];
+
+let _lastEndpointIndex = -1;
+
+function pickEndpoint() {
+  const stealth = global.config?.stealthMode;
+  if (!stealth?.enabled || !stealth?.diversePingEndpoints) {
+    return PING_ENDPOINTS[0];
+  }
+
+  let idx;
+  do {
+    idx = Math.floor(Math.random() * PING_ENDPOINTS.length);
+  } while (idx === _lastEndpointIndex && PING_ENDPOINTS.length > 1);
+  _lastEndpointIndex = idx;
+  return PING_ENDPOINTS[idx];
+}
+
+function buildHeaders(cookieStr, userAgent, referer) {
+  const accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8';
+  const headers = {
+    'cookie': cookieStr,
+    'user-agent': userAgent,
+    'accept': accept,
+    'accept-language': 'en-US,en;q=0.9,ar;q=0.7',
+    'accept-encoding': 'gzip, deflate, br',
+    'upgrade-insecure-requests': '1',
+    'sec-fetch-dest': 'document',
+    'sec-fetch-mode': 'navigate',
+    'sec-fetch-site': referer ? 'same-origin' : 'none',
+    'sec-fetch-user': '?1',
+    'cache-control': 'max-age=0',
+    'dnt': '1'
+  };
+  if (referer) headers['referer'] = referer;
+  return headers;
+}
+
+async function httpGet(url, cookieStr, userAgent, referer) {
   return axios.get(url, {
-    headers: {
-      cookie: cookieStr,
-      'user-agent': userAgent,
-      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'accept-language': 'ar,en-US;q=0.9',
-      'upgrade-insecure-requests': '1'
-    },
-    timeout: 15000,
+    headers: buildHeaders(cookieStr, userAgent, referer),
+    timeout: 18000,
     maxRedirects: 5,
     validateStatus: () => true
   });
+}
+
+function isLoginPage(html, responseUrl) {
+  const url = String(responseUrl || '');
+  const body = String(html || '');
+  return (
+    /\/login[/?]/.test(url) ||
+    body.includes('id="login_form"') ||
+    body.includes('You must log in to continue') ||
+    body.includes('Log in to Facebook')
+  );
 }
 
 async function doPing() {
@@ -79,56 +149,49 @@ async function doPing() {
     const cookieStr = getCookieStr(api);
     if (!cookieStr) return;
 
-    const UA = getUserAgent();
+    const UA       = getUserAgent();
+    const endpoint = pickEndpoint();
+    let success    = false;
 
-    let success = false;
-
-    // Primary: mbasic (lightest endpoint)
     try {
-      const r = await httpGet('https://mbasic.facebook.com/', cookieStr, UA);
+      const r    = await httpGet(endpoint.url, cookieStr, UA, endpoint.referer);
       const html = String(r.data || '');
-      const isLoginPage = /\/login[/?]/.test(String(r.request?.res?.responseUrl || ''))
-        || html.includes('id="login_form"')
-        || html.includes('You must log in to continue');
+      const resUrl = String(r.request?.res?.responseUrl || r.config?.url || '');
 
-      if (isLoginPage) {
-        log('warn', 'Ping mbasic → صفحة تسجيل الدخول — الجلسة ربما انتهت!');
+      if (isLoginPage(html, resUrl)) {
+        log('warn', `Ping ${endpoint.label} → login page — session may have expired!`);
       } else {
         success = true;
-        log('info', 'Ping mbasic ✓ — الجلسة حية');
+        log('info', `Ping ${endpoint.label} ✓ — session alive`);
       }
     } catch (e) {
-      log('warn', 'Ping mbasic فشل: ' + (e.message || e));
+      log('warn', `Ping ${endpoint.label} failed: ${e.message || e}`);
     }
 
-    // Fallback: www.facebook.com/home.php
     if (!success) {
+      const fallback = PING_ENDPOINTS[0];
       try {
-        const r2 = await httpGet('https://www.facebook.com/home.php', cookieStr, UA);
+        const r2    = await httpGet(fallback.url, cookieStr, getUserAgent(), null);
         const html2 = String(r2.data || '');
-        const isLoginPage2 = /\/login[/?]/.test(String(r2.request?.res?.responseUrl || ''))
-          || html2.includes('id="login_form"')
-          || html2.includes('You must log in to continue');
+        const resUrl2 = String(r2.request?.res?.responseUrl || '');
 
-        if (isLoginPage2) {
-          log('warn', 'Ping www ← صفحة تسجيل الدخول — الجلسة منتهية!');
+        if (isLoginPage(html2, resUrl2)) {
+          log('warn', 'Fallback ping → login page — session expired!');
         } else {
           success = true;
-          log('info', 'Ping www ✓ (mbasic كان يتعثر)');
+          log('info', `Fallback ping ${fallback.label} ✓`);
         }
       } catch (e) {
-        log('warn', 'Ping www فشل أيضاً: ' + (e.message || e));
+        log('warn', `Fallback ping failed: ${e.message || e}`);
       }
     }
 
-    // Update activity timestamp so MQTT healthcheck knows things are alive
     if (success) {
       global.lastMqttActivity = Date.now();
-      // Opportunistically save if appState changed
       await doSaveCookies('post-ping');
     }
   } catch (e) {
-    log('warn', 'doPing خطأ غير متوقع: ' + (e.message || e));
+    log('warn', `doPing unexpected error: ${e.message || e}`);
   }
 }
 
@@ -150,15 +213,14 @@ async function doSaveCookies(source) {
     const current = await fs.readFile(statePath, 'utf-8').catch(() => '');
     if (current.trim() === newData.trim()) return;
 
-    // Atomic write: write to temp then rename to avoid corruption
     const tmpPath = statePath + '.tmp';
     await fs.writeFile(tmpPath, newData, 'utf-8');
     await fs.move(tmpPath, statePath, { overwrite: true });
     await fs.writeFile(altPath, newData, 'utf-8');
 
-    log('info', `تم حفظ الكوكيز إلى ZAO-STATE.json & alt.json${source ? ` (${source})` : ''} ✓`);
+    log('info', `Cookies saved to ZAO-STATE.json & alt.json${source ? ` (${source})` : ''} ✓`);
   } catch (e) {
-    log('warn', 'فشل حفظ الكوكيز: ' + (e.message || e));
+    log('warn', `Failed to save cookies: ${e.message || e}`);
   } finally {
     isSaving = false;
   }
@@ -169,22 +231,34 @@ async function doRefreshDtsg() {
     const api = global._botApi;
     if (!api || typeof api.refreshFb_dtsg !== 'function') return;
     await api.refreshFb_dtsg();
-    log('info', 'تم تجديد رمز fb_dtsg بنجاح ✓');
+    log('info', 'fb_dtsg token refreshed ✓');
     await doSaveCookies('post-dtsg-refresh');
   } catch (e) {
-    log('warn', 'فشل تجديد fb_dtsg: ' + (e.message || e));
+    log('warn', `fb_dtsg refresh failed: ${e.message || e}`);
+  }
+}
+
+function getNightModeMultiplier() {
+  try {
+    const { isNightMode } = require('./humanTyping');
+    return isNightMode() ? 1.6 : 1.0;
+  } catch (_) {
+    return 1.0;
   }
 }
 
 function schedulePing() {
   if (pingTimer) clearTimeout(pingTimer);
-  const delay   = getRandomMs(5, 10);
-  const minutes = Math.round(delay / 60000);
+  const baseFactor = getNightModeMultiplier();
+  const minMin     = 5  * baseFactor;
+  const maxMin     = 10 * baseFactor;
+  const delay      = getRandomMs(minMin, maxMin);
+  const minutes    = Math.round(delay / 60000);
   pingTimer = setTimeout(async () => {
     await doPing();
     schedulePing();
   }, delay);
-  log('info', `Ping القادم بعد ${minutes} دقيقة`);
+  log('info', `Next ping in ${minutes} min`);
 }
 
 function startKeepAlive() {
@@ -192,14 +266,11 @@ function startKeepAlive() {
   if (dtsgTimer) clearInterval(dtsgTimer);
   if (saveTimer) clearInterval(saveTimer);
 
-  log('info', 'بدأ نظام إبقاء الجلسة — Ping كل 5-10 دقائق | كوكيز كل 30 دقيقة | dtsg كل 24 ساعة');
+  log('info', 'Session keep-alive started — Ping every 5-10 min | cookies every 30 min | dtsg every 24h');
 
   schedulePing();
 
-  // Save cookies every 30 minutes
   saveTimer = setInterval(() => doSaveCookies('scheduled'), 30 * 60 * 1000);
-
-  // Refresh fb_dtsg every 24 hours
   dtsgTimer = setInterval(() => doRefreshDtsg(), 24 * 60 * 60 * 1000);
 }
 
