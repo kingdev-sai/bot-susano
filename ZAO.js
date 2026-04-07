@@ -959,6 +959,7 @@ async function onBot({ models }) {
   const grad2    = gradStr2('red', 'cyan');
   console.log(grad2('━'.repeat(50), { interpolation: 'hsv' }));
   console.log(require('chalk').bold.hex('#1390f0')('──PROTECTION SYSTEMS─●'));
+  logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'Stealth-Engine   ✓  burst protection + night-mode + UA rotation + thread jitter', color: 'white' }]);
   logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'Fast-Ping        ✓  every 10 seconds (watchdog → /ping)', color: 'white' }]);
   logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'Auto-Ping        ✓  random 8-18 min', color: 'white' }]);
   logger.log([{ message: '[ PROTECT ]: ', color: ['red', 'cyan'] }, { message: 'Cookie Save      ✓  every 10 min → ZAO-STATE.json & alt.json', color: 'white' }]);
