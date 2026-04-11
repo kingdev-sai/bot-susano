@@ -60,18 +60,17 @@
     "eventDisabled": [],
 
     "OTPKEY": "",
-    "BOTNAME": "✺ ⚆  -- ➢ ZAO✸  ⟽  ",
+    "BOTNAME": "✺ ⚆  -- ➢ SUSANO✸  ⟽  ",
     "PREFIX": ".",
     "ADMINBOT": [
-        "100000434205615",
-        "100089220841183"
+  "61588122232768"
     ],
     "BOTID": "",
     "OWNER": "⋕ 𝗖𝗿͡𝗲𝗮͜𝘁𝗼𝗿 ‹〄› 𝐒𝖆̶𝖎̶ ₰",
     "OWNERID": "⋕ 𝗖𝗿͡𝗲𝗮͜𝘁𝗼𝗿 ‹〄› 𝐒𝖆̶𝖎̶ ₰",
     "AGE": "19",
     "GENDER": "MAN",
-    "FACEBOOK": "https://www.facebook.com/profile.php?id=100000434205615",
+    "FACEBOOK": "https://www.facebook.com/profile.php?id=61588122232768",
     "autoAccept": "true",
     "AutoOffBot": "disable",
     "AutoOffBotStartSleep": "01:00",
@@ -92,7 +91,7 @@
     "AutoPendingGroupChat": "disable",
     "AutoBioStatus": "enable",
     "AutoBioStatusSetPerHour": "1",
-    "BioStatus": "Prefix:[♕] \n made by: ⋕ 𝗖𝗿͡𝗲𝗮͜𝘁𝗼𝗿 ‹〄› 𝐒𝖆̶𝖎̶ ₰", 
+    "BioStatus": "Prefix:[.] \n made by: ⋕ 𝗖𝗿͡𝗲𝗮͜𝘁𝗼𝗿 ‹〄› 𝐒𝖆̶𝖎̶ ₰", 
     "AutoLeave": "disable",
     "RandomRedditMemes": "disable",
     "RandomRedditMemesSendPerHour": "1",
